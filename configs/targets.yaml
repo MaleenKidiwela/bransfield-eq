@@ -1,0 +1,44 @@
+# Bransfield EQ — Stage 1 targets.
+# Single source of truth for download + picking scripts.
+
+window:
+  start: "2019-01-01T00:00:00"
+  end:   "2020-03-01T00:00:00"
+
+# Channels to DOWNLOAD: seismic 3C + hydrophone (for Stage 2 discrimination).
+channels: "EH?,HH?,BH?,SH?,EL?,HL?,BL?,SL?,EDH,HDH,BDH,SDH,LDH"
+
+# Channels to use for PICKING (PhaseNet input). Seismic only — hydrophone excluded.
+picking_channels: "EH?,HH?,BH?,SH?,EL?,HL?,BL?,SL?"
+
+# Bransfield region bounding box (used for filtering reused temp networks like 5M).
+bbox:
+  minlatitude: -65.0
+  maxlatitude: -60.0
+  minlongitude: -65.0
+  maxlongitude: -54.0
+
+targets:
+  - data_center: EARTHSCOPE
+    network: ZX
+    station: "BRA*"
+    label: BRAVOSEIS OBS
+    bbox_filter: false
+
+  - data_center: GFZ
+    network: 5M
+    station: "*"
+    label: 5M Bransfield-region
+    bbox_filter: true        # 5M is a reused temp code — restrict to Bransfield
+
+  - data_center: EARTHSCOPE
+    network: AI
+    station: JUBA
+    label: AI.JUBA permanent
+    bbox_filter: false
+
+  - data_center: RASPISHAKE
+    network: AM
+    station: R4DE2
+    label: AM.R4DE2 Raspberry Shake (Bransfield epochs only)
+    bbox_filter: true        # R4DE2 code is reused — Uruguay epochs must be dropped

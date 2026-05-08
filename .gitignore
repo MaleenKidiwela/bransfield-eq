@@ -1,0 +1,12 @@
+data/waveforms/
+data/stationxml/
+data/*.mseed
+data/*.h5
+catalogs/*.csv
+catalogs/*.parquet
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.env
+.DS_Store
