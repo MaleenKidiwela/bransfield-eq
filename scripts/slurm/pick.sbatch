@@ -17,5 +17,7 @@ source .venv/bin/activate
 python scripts/03_run_phasenet.py \
     --shard "${SLURM_ARRAY_TASK_ID}" \
     --of    "${SLURM_ARRAY_TASK_COUNT}" \
-    --weights stead \
+    --weights instance \
+    --p-thresh 0.2 \
+    --s-thresh 0.2 \
     --device cuda

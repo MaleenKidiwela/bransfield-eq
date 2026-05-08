@@ -37,10 +37,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--station", default=None)
     p.add_argument("--shard", type=int, default=0)
     p.add_argument("--of", type=int, default=1)
-    p.add_argument("--weights", default="stead",
-                   help="SeisBench pretrained tag (stead/instance/ethz/...)")
-    p.add_argument("--p-thresh", type=float, default=0.3)
-    p.add_argument("--s-thresh", type=float, default=0.3)
+    p.add_argument("--weights", default="instance",
+                   help="SeisBench pretrained tag (default 'instance' — "
+                        "validated on Bransfield Dec 2019 to outperform "
+                        "'stead' on OBS data; recall ~45% vs 9% on P)")
+    p.add_argument("--p-thresh", type=float, default=0.2)
+    p.add_argument("--s-thresh", type=float, default=0.2)
     p.add_argument("--target-rate", type=float, default=100.0,
                    help="Resample to this rate before picking (PhaseNet default 100 Hz)")
     p.add_argument("--device", default="cpu", help="cpu | cuda | cuda:0 | mps")

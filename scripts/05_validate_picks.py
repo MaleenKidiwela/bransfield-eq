@@ -84,7 +84,16 @@ def load_phasenet_picks() -> pd.DataFrame:
     files = list(PICK_DIR.glob("*/*.csv")) if PICK_DIR.exists() else []
     if not files:
         return pd.DataFrame(columns=["time", "trace_id", "phase", "prob"])
-    frames = [pd.read_csv(f) for f in files]
+    frames = []
+    for f in files:
+        try:
+            d = pd.read_csv(f)
+        except pd.errors.EmptyDataError:
+            continue
+        if len(d):
+            frames.append(d)
+    if not frames:
+        return pd.DataFrame(columns=["time", "trace_id", "phase", "prob"])
     df = pd.concat(frames, ignore_index=True)
     # trace_id format: NET.STA.LOC.CHAN — split into columns
     parts = df["trace_id"].str.split(".", expand=True)

@@ -274,10 +274,28 @@ def backfill_origin_times(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def dedup_picks(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Drop duplicate picks across source files. mag07 ⊆ magall, so each NLLoc
+    pick appears in both files; dedup on (station, phase, pick_time) at
+    millisecond precision.
+    """
+    if df.empty:
+        return df
+    n0 = len(df)
+    df = df.copy()
+    df["_t_ms"] = pd.to_datetime(df["pick_time"], errors="coerce").astype("int64") // 10**6
+    df = df.drop_duplicates(subset=["station", "phase", "_t_ms"], keep="first")
+    df = df.drop(columns=["_t_ms"])
+    print(f"  deduped {n0 - len(df)} duplicate picks across source files")
+    return df
+
+
 def write_normalized() -> Path:
     df = load()
     df = resolve_networks(df)
     df = backfill_origin_times(df)
+    df = dedup_picks(df)
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUTPUT_CSV, index=False)
     return OUTPUT_CSV
