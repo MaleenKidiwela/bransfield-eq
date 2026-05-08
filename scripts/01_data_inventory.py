@@ -97,7 +97,7 @@ def main() -> None:
             continue
 
         sta_safe = tgt.station.replace("*", "ALL")
-        xml_path = XML_DIR / f"{tgt.network}_{sta_safe}.xml"
+        xml_path = XML_DIR / f"{tgt.network}_{sta_safe}_{tgt.data_center}.xml"
         inv.write(str(xml_path), format="STATIONXML")
         df = inventory_to_df(inv)
         df["target_label"] = tgt.label

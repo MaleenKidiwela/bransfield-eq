@@ -22,8 +22,14 @@ targets:
   - data_center: EARTHSCOPE
     network: ZX
     station: "BRA*"
-    label: BRAVOSEIS OBS
+    label: BRAVOSEIS OBS (EarthScope; BRA13-27)
     bbox_filter: false
+
+  - data_center: GFZ
+    network: ZX
+    station: "BRA*"
+    label: BRAVOSEIS OBS (GEOFON; BRA02-11)
+    bbox_filter: true        # safety: ZX is a reused temp code at GFZ too
 
   - data_center: GFZ
     network: 5M
