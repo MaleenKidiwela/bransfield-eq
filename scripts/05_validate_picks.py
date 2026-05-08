@@ -5,6 +5,22 @@ Reads:
   - catalogs/manual_picks.csv     (from src/bransfield_eq/manual_picks.py)
   - catalogs/picks/<NET>.<STA>/*.csv  (from scripts/03_run_phasenet.py)
 
+Two operating modes (see --event-window):
+
+  default ("global" mode):
+    Match every manual pick to the nearest PhaseNet pick within tolerance.
+    Every unmatched PhaseNet pick counts as FP. NOTE: in Bransfield this
+    over-penalises PhaseNet because it correctly picks non-tectonic signals
+    (icequakes, whales, ships, T-phases, Orca tremor) that are not in the
+    manual tectonic-only catalog. Use this mode for back-compatibility.
+
+  --event-window SECONDS  ("event" mode):
+    Only consider PhaseNet picks within ±SECONDS of a manual event origin
+    time. Outside those windows, PhaseNet picks are ignored (neither TP nor
+    FP). This isolates "did we recover known earthquakes" from
+    "what fraction of all picks are tectonic" — the latter requires Stage 2
+    discrimination to compute fairly.
+
 For each (network, station, phase), greedily match each manual pick to the
 nearest PhaseNet pick within a tolerance window. Reports:
   - per-station precision, recall, F1, mean/std time residual
@@ -14,7 +30,7 @@ nearest PhaseNet pick within a tolerance window. Reports:
 Definitions (per station-phase):
   TP  manual pick has a PhaseNet pick within tolerance
   FN  manual pick has none
-  FP  PhaseNet pick has no manual within tolerance
+  FP  PhaseNet pick has no manual within tolerance (and is in scope per mode)
   precision = TP / (TP + FP)
   recall    = TP / (TP + FN)
 
@@ -22,6 +38,7 @@ Usage:
     python scripts/05_validate_picks.py
     python scripts/05_validate_picks.py --p-tol 0.5 --s-tol 1.0
     python scripts/05_validate_picks.py --network ZX
+    python scripts/05_validate_picks.py --event-window 60   # ±60s around manual events
 """
 
 from __future__ import annotations
@@ -55,6 +72,10 @@ def parse_args() -> argparse.Namespace:
                    help="restrict to picks after this time (ISO)")
     p.add_argument("--end", default=None,
                    help="restrict to picks before this time (ISO)")
+    p.add_argument("--event-window", type=float, default=None,
+                   help="if set, only count PhaseNet picks within ±N s of "
+                        "any manual event origin (excludes non-tectonic "
+                        "icequakes/whales/ships from FP count)")
     return p.parse_args()
 
 
@@ -144,6 +165,33 @@ def main() -> None:
     if args.end:
         t1 = pd.to_datetime(args.end, utc=True)
         manual = manual[manual.t <= t1]; ml = ml[ml.t <= t1]
+
+    # Event-window scoping: drop ML picks far from any manual event origin.
+    if args.event_window is not None and not ml.empty:
+        full_manual = pd.read_csv(MANUAL_CSV)
+        ot = (full_manual.dropna(subset=["origin_time"])
+              .drop_duplicates(subset=["event_id"])[["event_id", "origin_time"]])
+        ot["origin_t"] = pd.to_datetime(ot["origin_time"], utc=True, errors="coerce")
+        ot = ot.dropna(subset=["origin_t"]).sort_values("origin_t")
+        if len(ot):
+            ot_ns = ot["origin_t"].astype("int64").values
+            ml_ns = ml["t"].astype("int64").values
+            tol_ns = int(args.event_window * 1e9)
+            keep = np.zeros(len(ml), dtype=bool)
+            idx = np.searchsorted(ot_ns, ml_ns)
+            for i, j in enumerate(idx):
+                for k in (j - 1, j):
+                    if 0 <= k < len(ot_ns) and abs(ot_ns[k] - ml_ns[i]) <= tol_ns:
+                        keep[i] = True
+                        break
+            n_dropped = (~keep).sum()
+            ml = ml.loc[keep].reset_index(drop=True)
+            print(f"  event-window mode (±{args.event_window:.0f}s): "
+                  f"kept {len(ml)} ML picks, dropped {n_dropped} outside "
+                  f"any manual-event window")
+        else:
+            print(f"  [warn] event-window mode requested but no manual "
+                  f"origin_time available — falling back to global mode")
 
     if ml.empty:
         print("\n  [warn] No PhaseNet picks on disk — skipping match. "

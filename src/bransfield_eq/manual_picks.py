@@ -255,9 +255,29 @@ def resolve_networks(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def backfill_origin_times(df: pd.DataFrame) -> pd.DataFrame:
+    """For events with no origin_time (NLLoc), use earliest pick time as a proxy.
+    Within a few seconds of the true origin for local events — adequate for
+    event-window validation modes that use tolerances of order tens of seconds.
+    """
+    if "origin_time" not in df.columns or "event_id" not in df.columns:
+        return df
+    missing = df["origin_time"].isna() & df["event_id"].notna()
+    if not missing.any():
+        return df
+    earliest = (df.loc[missing].groupby("event_id")["pick_time"].min())
+    df.loc[missing, "origin_time"] = df.loc[missing, "event_id"].map(earliest)
+    n_filled = (~df.loc[missing, "origin_time"].isna()).sum()
+    if n_filled:
+        print(f"  backfilled origin_time for {n_filled} picks "
+              f"({earliest.size} events) using earliest pick per event")
+    return df
+
+
 def write_normalized() -> Path:
     df = load()
     df = resolve_networks(df)
+    df = backfill_origin_times(df)
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUTPUT_CSV, index=False)
     return OUTPUT_CSV
