@@ -230,8 +230,34 @@ def load() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def resolve_networks(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fill missing `network` codes by joining against `catalogs/station_geometry.csv`.
+    Manual picks from NLLoc / Nordic don't carry network codes; we infer them
+    from the station inventory we already pulled from FDSN.
+    """
+    geo_csv = REPO / "catalogs" / "station_geometry.csv"
+    if not geo_csv.exists():
+        print("  [warn] station_geometry.csv not found — run scripts/04_station_geometry.py first")
+        return df
+    geo = pd.read_csv(geo_csv)[["station", "network"]].drop_duplicates(subset=["station"])
+    sta_to_net = dict(zip(geo["station"], geo["network"]))
+    if "network" not in df.columns:
+        df["network"] = None
+    missing = df["network"].isna()
+    df.loc[missing, "network"] = df.loc[missing, "station"].map(sta_to_net)
+    n_resolved = missing.sum() - df["network"].isna().sum()
+    n_unresolved = df["network"].isna().sum()
+    if n_resolved or n_unresolved:
+        print(f"  network resolution: {n_resolved} filled, "
+              f"{n_unresolved} still missing "
+              f"({df.loc[df.network.isna(), 'station'].value_counts().to_dict()})")
+    return df
+
+
 def write_normalized() -> Path:
     df = load()
+    df = resolve_networks(df)
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUTPUT_CSV, index=False)
     return OUTPUT_CSV
