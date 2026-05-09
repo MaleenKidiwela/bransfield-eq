@@ -43,6 +43,11 @@ def parse_args() -> argparse.Namespace:
                         "'stead' on OBS data; recall ~45% vs 9% on P)")
     p.add_argument("--p-thresh", type=float, default=0.2)
     p.add_argument("--s-thresh", type=float, default=0.2)
+    p.add_argument("--model", default="PhaseNet",
+                   choices=["PhaseNet", "EQTransformer"],
+                   help="SeisBench picking model class")
+    p.add_argument("--out-subdir", default="picks",
+                   help="catalogs/<out-subdir>/ — separate models to compare")
     p.add_argument("--target-rate", type=float, default=100.0,
                    help="Resample to this rate before picking (PhaseNet default 100 Hz)")
     p.add_argument("--device", default="cpu", help="cpu | cuda | cuda:0 | mps")
@@ -124,18 +129,29 @@ def main() -> None:
 
     # Lazy import — torch + seisbench are heavy and not needed for --help.
     import seisbench.models as sbm
-    print(f"Loading PhaseNet weights: {args.weights} on {args.device}", flush=True)
-    model = sbm.PhaseNet.from_pretrained(args.weights)
+    ModelCls = getattr(sbm, args.model)
+    print(f"Loading {args.model} weights: {args.weights} on {args.device}",
+          flush=True)
+    model = ModelCls.from_pretrained(args.weights)
     model.to(args.device)
+
+    # Allow alternate output subdir so different models can be compared without
+    # overwriting each other (e.g. catalogs/picks/ for PhaseNet, catalogs/picks_eqt/ for EQT).
+    from bransfield_eq.config import REPO as _REPO
+    out_root = _REPO / "catalogs" / args.out_subdir
+
+    def _pick_csv(net, sta, day):
+        return out_root / f"{net}.{sta}" / f"{day.year}-{day.julday:03d}.csv"
 
     pairs = list_station_days(cfg.start, cfg.end, args.network, args.station)
     if args.of > 1:
         pairs = [p for i, p in enumerate(pairs) if i % args.of == args.shard]
-    print(f"  shard {args.shard}/{args.of}: {len(pairs)} station-days to pick.")
+    print(f"  shard {args.shard}/{args.of}: {len(pairs)} station-days to pick "
+          f"→ catalogs/{args.out_subdir}/")
 
     n_done = n_skip = n_err = n_picks = 0
     for net, sta, day, mseed in pairs:
-        out_csv = pick_csv_path(net, sta, day)
+        out_csv = _pick_csv(net, sta, day)
         if out_csv.exists():
             n_skip += 1
             continue

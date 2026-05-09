@@ -4,6 +4,10 @@ data/*.mseed
 data/*.h5
 catalogs/*.csv
 catalogs/*.parquet
+catalogs/picks/
+catalogs/picks_*/
+figures/
+logs/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

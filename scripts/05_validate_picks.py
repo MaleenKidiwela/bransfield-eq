@@ -76,12 +76,16 @@ def parse_args() -> argparse.Namespace:
                    help="if set, only count PhaseNet picks within ±N s of "
                         "any manual event origin (excludes non-tectonic "
                         "icequakes/whales/ships from FP count)")
+    p.add_argument("--picks-subdir", default="picks",
+                   help="catalogs/<subdir>/ to read ML picks from (lets us "
+                        "compare picks_eqt_instance, picks_pn_obs, etc.)")
     return p.parse_args()
 
 
-def load_phasenet_picks() -> pd.DataFrame:
-    """Concatenate all per-day PhaseNet pick CSVs into one DataFrame."""
-    files = list(PICK_DIR.glob("*/*.csv")) if PICK_DIR.exists() else []
+def load_phasenet_picks(subdir: str = "picks") -> pd.DataFrame:
+    """Concatenate all per-day ML pick CSVs from catalogs/<subdir>/."""
+    pick_root = REPO / "catalogs" / subdir
+    files = list(pick_root.glob("*/*.csv")) if pick_root.exists() else []
     if not files:
         return pd.DataFrame(columns=["time", "trace_id", "phase", "prob"])
     frames = []
@@ -161,8 +165,8 @@ def main() -> None:
     manual = load_manual_picks()
     print(f"  {len(manual)} manual picks across {manual.station.nunique()} stations.")
 
-    print("Loading PhaseNet picks ...")
-    ml = load_phasenet_picks()
+    print(f"Loading ML picks from catalogs/{args.picks_subdir}/ ...")
+    ml = load_phasenet_picks(args.picks_subdir)
     print(f"  {len(ml)} PhaseNet picks across {ml.station.nunique() if len(ml) else 0} stations.")
 
     if args.network:
