@@ -79,6 +79,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--picks-subdir", default="picks",
                    help="catalogs/<subdir>/ to read ML picks from (lets us "
                         "compare picks_eqt_instance, picks_pn_obs, etc.)")
+    p.add_argument("--manual-source", default="all",
+                   help="filter manual picks by source_file substring "
+                        "('all' = no filter; 'mag07' = nllmaleen_mag07_202210.out, "
+                        "the ML>=0.7 high-quality subset)")
     return p.parse_args()
 
 
@@ -109,11 +113,18 @@ def load_phasenet_picks(subdir: str = "picks") -> pd.DataFrame:
     return df[["network", "station", "channel", "phase", "t", "prob"]]
 
 
-def load_manual_picks() -> pd.DataFrame:
+def load_manual_picks(source_filter: str = "all") -> pd.DataFrame:
     if not MANUAL_CSV.exists():
         raise SystemExit(f"Missing {MANUAL_CSV}. Run "
                          "PYTHONPATH=src python -m bransfield_eq.manual_picks first.")
     df = pd.read_csv(MANUAL_CSV)
+    if source_filter and source_filter != "all":
+        before = len(df)
+        df = df[df["source_file"].str.contains(source_filter, case=False, na=False)]
+        if df.empty:
+            raise SystemExit(f"--manual-source '{source_filter}' matched 0 of "
+                             f"{before} manual picks. Available source_file values: "
+                             f"{sorted(pd.read_csv(MANUAL_CSV)['source_file'].unique())}")
     df["t"] = pd.to_datetime(df["pick_time"], utc=True, errors="coerce")
     df = df.dropna(subset=["t", "phase", "station"])
     df["phase"] = df["phase"].str.upper().str[0]
@@ -162,7 +173,7 @@ def match_one_group(manual: pd.DataFrame, ml: pd.DataFrame,
 def main() -> None:
     args = parse_args()
     print("Loading manual picks ...")
-    manual = load_manual_picks()
+    manual = load_manual_picks(args.manual_source)
     print(f"  {len(manual)} manual picks across {manual.station.nunique()} stations.")
 
     print(f"Loading ML picks from catalogs/{args.picks_subdir}/ ...")

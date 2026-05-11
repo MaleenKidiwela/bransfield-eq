@@ -1,12 +1,16 @@
-data/waveforms/
-data/stationxml/
+data/waveforms
+data/stationxml
 data/*.mseed
 data/*.h5
 catalogs/*.csv
 catalogs/*.parquet
-catalogs/picks/
-catalogs/picks_*/
-figures/
+catalogs/picks
+catalogs/picks_*
+# but keep small reference catalogs needed for the pipeline to start
+!catalogs/station_geometry.csv
+!catalogs/manual_picks.csv
+# top-level working figures dir (regenerable), keep notes/figures/ tracked
+/figures/
 logs/
 __pycache__/
 *.pyc
@@ -14,3 +18,22 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+
+# Trained ML weights (large; rebuild via training scripts)
+models/
+
+# Generated pyocto travel-time cache (built from velocity_model.csv on first run)
+configs/*.pyocto
+configs/*.bak_*
+
+# Misc working files
+data/seisbench/
+catalogs/*.bak_*
+
+# Bundled PDFs are large; supporting info available publicly via the Kidiwela+ paper
+notes/supporting info.pdf
+notes/*.pdf
+
+# GrowClust outputs and pyocto-built catalogs
+growclust/
+

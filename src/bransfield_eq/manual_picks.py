@@ -21,7 +21,7 @@ OUTPUT_CSV = REPO / "catalogs" / "manual_picks.csv"
 CANONICAL_COLUMNS = [
     "event_id", "origin_time", "magnitude",
     "network", "station", "location", "channel",
-    "phase", "pick_time", "analyst", "source_file",
+    "phase", "pick_time", "uncertainty_s", "analyst", "source_file",
 ]
 
 
@@ -69,6 +69,15 @@ def _parse_nlloc_obs(path: Path) -> pd.DataFrame:
         sta, inst, comp, onset, phase, fm, ymd, hm, sec = parts[:9]
         if phase not in ("P", "S"):
             continue
+        # Optional NLLoc error fields after the 9 mandatory ones:
+        #   parts[9]  = ERRTYPE (e.g. 'GAU')
+        #   parts[10] = SIGMA   (uncertainty in seconds, e.g. '1.00e-01')
+        uncertainty_s = None
+        if len(parts) >= 11 and parts[9] in ("GAU", "BOX"):
+            try:
+                uncertainty_s = float(parts[10])
+            except ValueError:
+                pass
         try:
             year = int(ymd[:4]); mo = int(ymd[4:6]); da = int(ymd[6:8])
             hh = int(hm[:2]); mm = int(hm[2:4])
@@ -88,6 +97,7 @@ def _parse_nlloc_obs(path: Path) -> pd.DataFrame:
             "channel": comp,
             "phase": phase,
             "pick_time": str(t),
+            "uncertainty_s": uncertainty_s,
             "analyst": None,
             "source_file": path.name,
         })
@@ -204,6 +214,7 @@ def _parse_nordic(path: Path) -> pd.DataFrame:
             "channel": comp,
             "phase": phase,
             "pick_time": str(t),
+            "uncertainty_s": None,    # Nordic format does not carry per-pick sigma
             "analyst": None,
             "source_file": path.name,
         })
