@@ -138,8 +138,25 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
     """Build the unified pick dataframe in PyOcto format:
         columns = station, time (UTCDateTime), phase ('P' or 'S'), prob (optional)
     """
+    # Pre-filter CSVs by filename ("YYYY-DDD.csv") so we don't pandas-parse
+    # 28k CSVs to keep one day's worth. CSV-per-station-day naming.
+    import datetime as _dt
+    _wanted_names = set()
+    _d = start_pd.to_pydatetime().replace(tzinfo=None)
+    _e = end_pd.to_pydatetime().replace(tzinfo=None)
+    while _d < _e + _dt.timedelta(days=1):  # +1 day to cover boundary picks
+        _wanted_names.add(f"{_d.year}-{_d.timetuple().tm_yday:03d}.csv")
+        _d += _dt.timedelta(days=1)
+
+    def _candidate_csvs(sta_dir):
+        # Fast path: only globbing names we actually want.
+        for n in sorted(_wanted_names):
+            p = sta_dir / n
+            if p.exists():
+                yield p
+
     rows = []
-    if picker_pool in ("picker_only", "with_manual"):
+    if picker_pool != "manual_only":   # always load picker output unless explicitly manual-only
         # PhaseNet P only
         pn_dir = REPO / "catalogs" / "picks"
         if pn_dir.exists():
@@ -147,7 +164,7 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
                 if not sd.is_dir(): continue
                 try: net, sta = sd.name.split(".")
                 except ValueError: continue
-                for csv in sorted(sd.glob("*.csv")):
+                for csv in _candidate_csvs(sd):
                     try: d = pd.read_csv(csv)
                     except (pd.errors.EmptyDataError, pd.errors.ParserError): continue
                     if d.empty: continue
@@ -166,7 +183,7 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
                 if not sd.is_dir(): continue
                 try: net, sta = sd.name.split(".")
                 except ValueError: continue
-                for csv in sorted(sd.glob("*.csv")):
+                for csv in _candidate_csvs(sd):
                     try: d = pd.read_csv(csv)
                     except (pd.errors.EmptyDataError, pd.errors.ParserError): continue
                     if d.empty: continue
@@ -215,7 +232,8 @@ def main():
     ap.add_argument("--vpvs", type=float, default=1.78,
                     help="Vp/Vs ratio used to derive Vs if velocity model is P-only")
     ap.add_argument("--label", default="picker_only",
-                    choices=["picker_only", "with_manual"])
+                    help="output label; 'picker_only' loads PN+OBST, 'with_manual' adds "
+                         "manual catalog; any other label uses the picker_only sources")
     ap.add_argument("--min-stations", type=int, default=DEFAULTS["min_stations"])
     ap.add_argument("--min-p", type=int, default=DEFAULTS["min_p"])
     ap.add_argument("--min-s", type=int, default=DEFAULTS["min_s"])
@@ -224,31 +242,61 @@ def main():
     ap.add_argument("--edt-std", type=float, default=DEFAULTS["edt_pick_std"])
     ap.add_argument("--z-max-km", type=float, default=DEFAULTS["z_max_km"])
     ap.add_argument("--n-threads", type=int, default=DEFAULTS["n_threads"])
+    ap.add_argument("--margin-seconds", type=float, default=0.0,
+                    help="when chunking, expand the pick-load window by this many "
+                         "seconds on each side so events near the boundary still "
+                         "get all their late-arriving picks. Output events are then "
+                         "filtered back to the strict [start, end) origin-time window. "
+                         "Set to >= max P travel time across the bbox (~120 s for ours).")
     args = ap.parse_args()
     warnings.filterwarnings("ignore", category=FutureWarning)
 
     import pyocto
     from pyproj import CRS
+    import time as _time
+    import sys as _sys
+    import traceback as _tb
 
-    print(f"=== PyOcto association  label={args.label}  {args.start} → {args.end} ===")
+    # Force unbuffered prints so progress is visible in real time when piped to a log
+    _sys.stdout.reconfigure(line_buffering=True)
+    _sys.stderr.reconfigure(line_buffering=True)
+    def _log(msg):
+        ts = _time.strftime("%H:%M:%S")
+        print(f"[{ts}] {msg}", flush=True)
+
+    _t_start = _time.time()
+    _log(f"=== PyOcto association  label={args.label}  {args.start} → {args.end} ===")
     start_pd = pd.Timestamp(args.start, tz="UTC")
     end_pd = pd.Timestamp(args.end, tz="UTC")
+    # Expanded pick-load window so boundary events see all their late picks
+    load_start = start_pd - pd.Timedelta(seconds=args.margin_seconds)
+    load_end   = end_pd   + pd.Timedelta(seconds=args.margin_seconds)
+    if args.margin_seconds > 0:
+        _log(f"chunk strict window: [{start_pd}, {end_pd}); "
+             f"load window: [{load_start}, {load_end}) (+{args.margin_seconds:.0f}s margin)")
 
-    print("\nLoading picks ...")
-    picks = load_picks_for_pyocto(start_pd, end_pd, args.label)
-    print(f"  total picks: {len(picks):,}  ({(picks.phase=='P').sum():,} P + {(picks.phase=='S').sum():,} S)")
+    _t = _time.time()
+    _log("Loading picks ...")
+    picks = load_picks_for_pyocto(load_start, load_end, args.label)
+    _log(f"  total picks: {len(picks):,}  "
+         f"({(picks.phase=='P').sum():,} P + {(picks.phase=='S').sum():,} S)  "
+         f"({_time.time()-_t:.1f}s)")
     if picks.empty:
         raise SystemExit("No picks loaded.")
+    _log(f"  pick time range: {picks.t.min()} -> {picks.t.max()}")
+    _log(f"  stations represented: {picks.station.nunique()}")
 
-    print("\nLoading stations ...")
+    _t = _time.time()
+    _log("Loading stations ...")
     stations = build_stations_df()
-    # Restrict to stations present in picks
     pick_stas = set(picks.station.unique())
     stations = stations[stations.station.isin(pick_stas)].reset_index(drop=True)
-    print(f"  stations with picks: {len(stations)}")
+    _log(f"  stations with picks: {len(stations)}  ({_time.time()-_t:.1f}s)")
 
-    print(f"\nLoading velocity model from {args.velocity_model} ...")
+    _t = _time.time()
+    _log(f"Loading velocity model from {args.velocity_model} ...")
     vel = load_velocity_model(Path(args.velocity_model), vpvs_ratio=args.vpvs)
+    _log(f"  velocity model ready ({_time.time()-_t:.1f}s)")
 
     # Compute spatial extent in km from station bounding box
     lat0 = stations.latitude.mean()
@@ -260,12 +308,14 @@ def main():
     sx, sy = tx.transform(stations.longitude.values, stations.latitude.values)
     xmin, xmax = (sx.min() - 50e3) / 1e3, (sx.max() + 50e3) / 1e3
     ymin, ymax = (sy.min() - 50e3) / 1e3, (sy.max() + 50e3) / 1e3
-    print(f"  bbox: x [{xmin:.1f}, {xmax:.1f}] km, y [{ymin:.1f}, {ymax:.1f}] km, z [0, {args.z_max_km}] km")
+    _log(f"  bbox: x [{xmin:.1f}, {xmax:.1f}] km, y [{ymin:.1f}, {ymax:.1f}] km, z [0, {args.z_max_km}] km")
 
-    print(f"\nThresholds: min_stations={args.min_stations}, min_P={args.min_p}, "
-          f"min_S={args.min_s}, min_total={args.min_total}, pick_tol={args.pick_tol}s")
+    _log(f"Thresholds: min_stations={args.min_stations}, min_P={args.min_p}, "
+         f"min_S={args.min_s}, min_total={args.min_total}, pick_tol={args.pick_tol}s, "
+         f"n_threads={args.n_threads}")
 
-    # Build associator
+    _t = _time.time()
+    _log("Building associator (Eikonal travel-time tables) ...")
     associator = pyocto.OctoAssociator(
         xlim=(xmin, xmax), ylim=(ymin, ymax), zlim=(0.0, args.z_max_km),
         velocity_model=vel,
@@ -282,28 +332,45 @@ def main():
         crs=crs,
     )
 
-    # PyOcto >=0.6 requires an 'id' column on stations
-    stations["id"] = stations["station"]
-    # PyOcto requires x/y/z columns on stations -- project lat/lon/elevation
-    # via the associator's CRS. elevation is in metres in the inventory; pyocto
-    # interprets it as positive-up, so OBS (negative elev) end up at positive z.
-    associator.transform_stations(stations)
-    print(f"  station z (km below sea level): "
-          f"min={stations.z.min():.2f}  max={stations.z.max():.2f}  "
-          f"mean={stations.z.mean():.2f}")
+    _log(f"  associator built ({_time.time()-_t:.1f}s)")
 
-    # PyOcto pick format: DataFrame with cols 'station', 'time' (datetime64), 'phase'
+    _t = _time.time()
+    stations["id"] = stations["station"]
+    associator.transform_stations(stations)
+    _log(f"  station z (km below sea level): "
+         f"min={stations.z.min():.2f}  max={stations.z.max():.2f}  "
+         f"mean={stations.z.mean():.2f}  ({_time.time()-_t:.1f}s)")
+
     picks_in = picks.rename(columns={"t": "time"}).copy()
-    # pyocto's Pick constructor expects float epoch seconds, not pd.Timestamp
     picks_in["time"] = picks_in["time"].astype("int64") / 1e9
-    print(f"\nRunning association on {len(picks_in):,} picks ...")
-    import time as _time
-    t0 = _time.time()
-    events, assoc = associator.associate(picks_in, stations)
-    dt = _time.time() - t0
-    print(f"  associator wall: {dt:.1f}s")
-    print(f"  events: {len(events):,}")
-    print(f"  associated picks: {len(assoc):,}")
+    _log(f"Running association on {len(picks_in):,} picks (this is the long call) ...")
+    _t = _time.time()
+    try:
+        events, assoc = associator.associate(picks_in, stations)
+    except Exception as e:
+        _log(f"!!! associate() raised: {type(e).__name__}: {e}")
+        _tb.print_exc()
+        raise
+    _log(f"  associator wall: {_time.time()-_t:.1f}s")
+    _log(f"  events: {len(events):,}")
+    _log(f"  associated picks: {len(assoc):,}")
+
+    # If we loaded with a margin, drop events whose origin time falls outside the
+    # strict [start, end) window so that adjacent chunks don't double-count them.
+    if args.margin_seconds > 0 and not events.empty and "time" in events.columns:
+        strict_start = start_pd.timestamp()
+        strict_end   = end_pd.timestamp()
+        before = len(events)
+        in_window = (events.time >= strict_start) & (events.time < strict_end)
+        events = events[in_window].reset_index(drop=True)
+        # filter assoc to the surviving events
+        kept_idx = set(events["idx"].tolist()) if "idx" in events.columns else None
+        if kept_idx is not None and "event_idx" in assoc.columns:
+            assoc = assoc[assoc.event_idx.isin(kept_idx)].reset_index(drop=True)
+        elif kept_idx is not None and "idx" in assoc.columns:
+            assoc = assoc[assoc.idx.isin(kept_idx)].reset_index(drop=True)
+        _log(f"  margin filter: kept {len(events)}/{before} events in strict window "
+             f"[{start_pd}, {end_pd})")
 
     out_events = REPO / "catalogs" / f"pyocto_events_{args.label}.csv"
     out_picks = REPO / "catalogs" / f"pyocto_picks_{args.label}.csv"

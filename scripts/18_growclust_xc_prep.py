@@ -71,8 +71,15 @@ def load_pyocto(label: str):
         if src in pk.columns and dst not in pk.columns:
             rename_pk[src] = dst
     pk = pk.rename(columns=rename_pk)
-    ev["origin_time"] = pd.to_datetime(ev["origin_time"], utc=True)
-    pk["pick_time"]   = pd.to_datetime(pk["pick_time"], utc=True)
+    # pyocto writes times as float epoch-seconds; pd.to_datetime defaults to ns
+    # if the input is numeric, so we have to force unit='s' to avoid all events
+    # landing on 1970-01-01.
+    def _to_utc(s):
+        if pd.api.types.is_numeric_dtype(s):
+            return pd.to_datetime(s, unit="s", utc=True)
+        return pd.to_datetime(s, utc=True)
+    ev["origin_time"] = _to_utc(ev["origin_time"])
+    pk["pick_time"]   = _to_utc(pk["pick_time"])
     return ev, pk
 
 
@@ -169,27 +176,158 @@ def collect_pair_dts(ev_a, ev_b, picks_a, picks_b, wf_cache):
         lag, cc = result
         if cc < CC_THRESH:
             continue
-        # Observed pick-time difference (B relative to A), corrected by sub-sample lag
+        # Travel-time differential: (tt_a - tt_b) = (pick_a - origin_a) - (pick_b - origin_b)
+        # Earlier versions wrote raw pick_a - pick_b (dominated by origin-time spread,
+        # which broke GrowClust). Now properly subtract origin-time difference.
+        oa = ev_a.origin_time if hasattr(ev_a, "origin_time") else ev_a.get("origin_time")
+        ob = ev_b.origin_time if hasattr(ev_b, "origin_time") else ev_b.get("origin_time")
+        origin_dt = (oa - ob).total_seconds()
         pick_dt_obs = (pa.pick_time - pb.pick_time).total_seconds() + (lag / FS_TARGET)
-        rows.append((pa.sta_key, pa.phase, pick_dt_obs, cc))
+        tt_dt = pick_dt_obs - origin_dt
+        rows.append((pa.sta_key, pa.phase, tt_dt, cc))
     return rows
 
 
-def build_wf_cache_for_event(picks_e, stations_df):
-    """Load + window waveforms for every pick of a single event. Returns dict keyed by (net, sta, pick_time)."""
+import threading
+# Numpy waveform cache: (net, sta, year, doy) -> dict with keys 'data' (float32 array
+# at FS_TARGET Hz, vertical-preferred) and 'starttime_unix' (float epoch seconds).
+# False sentinel means "tried to load and failed (file missing or unreadable)".
+_WF_CACHE = {}
+_WF_CACHE_LOCK = threading.Lock()
+_WF_CACHE_MISS = threading.Lock()    # per-key load lock to prevent double-reads
+
+def _load_station_day_array(network, station, year, doy):
+    """Read mseed for one station-day, return (data_array_float32_at_FS_TARGET, starttime_unix).
+    Picks a Z (vertical) channel preferentially. Returns None if file missing/unreadable."""
     from obspy import read
+    import numpy as _np
+    # Build path
+    class _DT:
+        def __init__(s, y, d): s.year = y; s.dayofyear = d
+    path = _waveform_path(network, station, _DT(year, doy))
+    if not path.exists():
+        return None
+    try:
+        st = read(str(path))
+    except Exception:
+        return None
+    if len(st) == 0:
+        return None
+    # Prefer Z, else first available channel merged
+    z_traces = [tr for tr in st if tr.stats.channel.endswith("Z")]
+    if z_traces:
+        tr = z_traces[0]
+    else:
+        try:
+            tr = st.merge(fill_value=0)[0]
+        except Exception:
+            tr = st[0]
+    # Resample once to FS_TARGET, then collapse to a plain numpy array
+    if tr.stats.sampling_rate != FS_TARGET:
+        try:
+            tr.resample(FS_TARGET, no_filter=True)
+        except Exception:
+            return None
+    data = _np.ascontiguousarray(tr.data, dtype=_np.float32)
+    starttime_unix = float(tr.stats.starttime.timestamp)
+    return data, starttime_unix
+
+
+def _get_wf(network, station, dt):
+    """Return (data_array, starttime_unix) for the station-day containing dt, or None."""
+    key = (network, station, dt.year, dt.dayofyear)
+    val = _WF_CACHE.get(key)
+    if val is not None:
+        return val if val is not False else None
+    # Slow path -- load while holding key-specific lock to prevent duplicate reads
+    with _WF_CACHE_MISS:
+        val = _WF_CACHE.get(key)
+        if val is not None:
+            return val if val is not False else None
+        loaded = _load_station_day_array(network, station, dt.year, dt.dayofyear)
+        _WF_CACHE[key] = loaded if loaded is not None else False
+    return loaded
+
+
+def slice_window_from_array(data, starttime_unix, pick_time_unix, win_sec):
+    """Slice ±win_sec around a pick from a preloaded float32 array. Returns
+    de-meaned, unit-norm numpy array. Pure numpy; no obspy."""
+    import numpy as _np
+    n_each = int(round(win_sec * FS_TARGET))
+    n_total = 2 * n_each
+    center_sample = int(round((pick_time_unix - starttime_unix) * FS_TARGET))
+    s0 = center_sample - n_each
+    s1 = center_sample + n_each
+    if s0 < 0 or s1 > len(data):
+        # Pad with zeros at boundaries
+        out = _np.zeros(n_total, dtype=_np.float32)
+        a, b = max(0, s0), min(len(data), s1)
+        oa, ob = a - s0, b - s0
+        if b > a:
+            out[oa:ob] = data[a:b]
+    else:
+        out = _np.ascontiguousarray(data[s0:s1], dtype=_np.float32)
+    out = out - out.mean()
+    nm = _np.linalg.norm(out)
+    if nm > 0:
+        out = out / nm
+    return out
+
+
+def preload_all_station_days(picks, stations_df, workers):
+    """Read+parse every station-day waveform file referenced by picks, once, in
+    parallel. Populates _WF_CACHE so subsequent slice_window calls are pure numpy."""
+    needed = set()
+    for pk in picks.itertuples():
+        try:
+            row = stations_df.loc[pk.sta_key]
+        except KeyError:
+            continue
+        dt = pk.pick_time
+        needed.add((row.network, row.station, dt.year, dt.dayofyear))
+    print(f"  preloading {len(needed):,} station-day waveform files "
+          f"({workers} parallel readers) ...", flush=True)
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    t0 = _time.time()
+    def _load_one(args):
+        net, sta, year, doy = args
+        key = (net, sta, year, doy)
+        if key in _WF_CACHE:
+            return None
+        loaded = _load_station_day_array(net, sta, year, doy)
+        _WF_CACHE[key] = loaded if loaded is not None else False
+        return None
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for _ in as_completed([ex.submit(_load_one, a) for a in needed]):
+            done += 1
+            if done % 200 == 0:
+                el = _time.time() - t0
+                print(f"    preloaded {done}/{len(needed)} ({el:.0f}s, "
+                      f"{done/max(el,1):.1f}/s)", flush=True)
+    el = _time.time() - t0
+    n_ok = sum(1 for v in _WF_CACHE.values() if v is not False and v is not None)
+    n_miss = sum(1 for v in _WF_CACHE.values() if v is False)
+    print(f"  preload done: {n_ok} loaded, {n_miss} missing/failed ({el:.0f}s)", flush=True)
+
+
+def build_wf_cache_for_event(picks_e, stations_df):
+    """Build per-pick window arrays for one event. Underlying mseed is preloaded
+    into _WF_CACHE so this is now pure numpy slicing."""
     cache = {}
     for pk in picks_e.itertuples():
         try:
             row = stations_df.loc[pk.sta_key]
         except KeyError:
             continue
-        path = _waveform_path(row.network, row.station, pk.pick_time)
-        if not path.exists():
+        val = _get_wf(row.network, row.station, pk.pick_time)
+        if val is None:
             continue
+        data_arr, starttime_unix = val
         try:
-            st = read(str(path))
-            arr = slice_window(st, pk.pick_time, WIN_SEC)
+            pick_time_unix = pk.pick_time.timestamp()
+            arr = slice_window_from_array(data_arr, starttime_unix, pick_time_unix, WIN_SEC)
             cache[(row.network, row.station, pk.pick_time)] = arr
         except Exception:
             continue
@@ -333,19 +471,26 @@ def main():
     for a, b in pair_set:
         pairs_by_anchor[a].append(b)
 
-    print(f"  cross-correlating ...")
+    # Preload every needed mseed file once -- big upfront win vs. re-reading per pair
+    preload_all_station_days(picks, stations_df, workers=min(args.workers * 2, 64))
+
+    print(f"  cross-correlating with {args.workers} threads ...")
     import time as _time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from threading import Lock
     t0 = _time.time()
-    cache_a = None
-    last_anchor = None
     n_done = 0
-    for anchor, partners in pairs_by_anchor.items():
+    n_done_lock = Lock()
+
+    def _process_anchor(anchor):
+        """Build cache for this anchor, process all its partners. Returns dict of pair->rows."""
+        local_results = {}
         ev_a_idx = event_idx_values[anchor]
         picks_a = picks_by_event.get(ev_a_idx, pd.DataFrame())
         if picks_a.empty:
-            continue
+            return local_results
         cache_a = build_wf_cache_for_event(picks_a, stations_df)
-        for b in partners:
+        for b in pairs_by_anchor[anchor]:
             ev_b_idx = event_idx_values[b]
             picks_b = picks_by_event.get(ev_b_idx, pd.DataFrame())
             if picks_b.empty:
@@ -355,16 +500,34 @@ def main():
             rows = collect_pair_dts(events.iloc[anchor], events.iloc[b],
                                      picks_a, picks_b, cache)
             if rows:
-                # event ids 1-based for GrowClust
-                pair_results[(anchor + 1, b + 1)] = rows
-                for sk, *_ in rows:
+                local_results[(anchor + 1, b + 1)] = rows
+        return local_results
+
+    anchors = list(pairs_by_anchor.keys())
+    total_anchors = len(anchors)
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        futures = {ex.submit(_process_anchor, a): a for a in anchors}
+        for fut in as_completed(futures):
+            try:
+                lr = fut.result()
+            except Exception as e:
+                print(f"    !!! anchor {futures[fut]} raised: {type(e).__name__}: {e}", flush=True)
+                continue
+            for k, v in lr.items():
+                pair_results[k] = v
+                for sk, *_ in v:
                     used_keys.add(sk)
-        n_done += 1
-        if n_done % 50 == 0:
-            elapsed = _time.time() - t0
-            kept = sum(len(r) for r in pair_results.values())
-            print(f"    {n_done}/{len(pairs_by_anchor)} anchors  "
-                  f"kept {len(pair_results)} pairs / {kept} obs  ({elapsed:.0f}s)")
+            with n_done_lock:
+                n_done += 1
+                if n_done % 50 == 0:
+                    elapsed = _time.time() - t0
+                    kept = sum(len(r) for r in pair_results.values())
+                    rate = n_done / max(elapsed, 1)
+                    eta = (total_anchors - n_done) / max(rate, 1e-6)
+                    print(f"    {n_done}/{total_anchors} anchors  "
+                          f"kept {len(pair_results)} pairs / {kept} obs  "
+                          f"({elapsed:.0f}s, {rate:.1f}/s, ETA {eta/60:.1f}min)",
+                          flush=True)
 
     elapsed = _time.time() - t0
     kept = sum(len(r) for r in pair_results.values())

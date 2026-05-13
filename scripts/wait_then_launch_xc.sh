@@ -18,5 +18,5 @@ printf '\n=== AUTO-LAUNCH GrowClust XC prep at %s (pyocto PID %s exited) ===\n' 
     "$(date -u +%Y-%m-%dT%H:%MZ)" "$PYOCTO_PID" >> logs/growclust_xc_prep.log
 
 exec .venv/bin/python scripts/18_growclust_xc_prep.py \
-    --label picker_only --workers 8 \
+    --label picker_only --workers 64 \
     >> logs/growclust_xc_prep.log 2>&1 < /dev/null

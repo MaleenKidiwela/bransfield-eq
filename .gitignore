@@ -36,4 +36,9 @@ notes/*.pdf
 
 # GrowClust outputs and pyocto-built catalogs
 growclust/
+catalogs/pyocto_daily/
+catalogs/pyocto_chunks/
+
+# Large bathymetry grid (rebuildable from MGDS download)
+notes/figures/Orca_bathymetry.nc
 

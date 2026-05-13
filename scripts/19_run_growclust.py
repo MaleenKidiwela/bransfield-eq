@@ -92,12 +92,12 @@ TT/tt.sg
 * vpvs_factor   rayparam_min
   1.78          0.0
 * tt_dep0  tt_dep1  tt_ddep
-   0.0      30.0     0.5
+   0.0      60.0     0.5
 * tt_del0  tt_del1  tt_ddel
-   0.0      150.0    1.0
+   0.0      300.0    1.0
 *
 * rmin  delmax  rmsmax
-  0.6    100      0.5
+  0.6    250      0.5
 * rpsavgmin  rmincut  ngoodmin  iponly
    0          0         0         0
 *
@@ -174,9 +174,9 @@ def main():
 
     # Run binary (from run_dir so relative paths resolve)
     print(f"\nRunning {args.binary} from {run_dir} ...")
+    # GrowClust expects the control file as argv[1], not stdin
     proc = subprocess.run(
-        [args.binary],
-        input=ctl_path.name.encode(),
+        [args.binary, ctl_path.name],
         cwd=run_dir,
         capture_output=True,
         timeout=3600,

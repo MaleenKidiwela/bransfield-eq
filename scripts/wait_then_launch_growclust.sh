@@ -8,7 +8,7 @@ LOG="logs/growclust_run.log"
 
 # Wait for Stage 3 to start (so we don't fire before it has begun).
 seen=0
-for _ in $(seq 1 720); do          # up to ~12 hours of waiting to start
+for _ in $(seq 1 2880); do         # up to ~48 hours of waiting to start
     if pgrep -f 18_growclust_xc_prep >/dev/null 2>&1; then
         seen=1
         break
