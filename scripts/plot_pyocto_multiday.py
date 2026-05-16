@@ -77,10 +77,15 @@ sc = ax.scatter(ez.lon, ez.lat, c=ez.z, s=3, cmap="magma_r",
                 vmin=0, vmax=20, edgecolors="none",
                 alpha=0.7, zorder=7,
                 label=f"events ({len(ez)})")
-plt.colorbar(cf, ax=ax, label="seafloor elev. (m)", shrink=0.65, pad=0.02,
-             ticks=np.arange(-2400, 200, 400))
-cax = fig.add_axes([0.45, 0.55, 0.012, 0.25])
-plt.colorbar(sc, cax=cax, label="event depth (km)")
+cb_bathy = plt.colorbar(cf, ax=ax, label="seafloor elev. (m)", shrink=0.75,
+                        pad=0.03, ticks=np.arange(-2400, 200, 400))
+cb_bathy.ax.tick_params(labelsize=8)
+# Event-depth colorbar as an inset inside the map axes -- won't collide with
+# the bathymetry bar on the right.
+cax = ax.inset_axes([0.04, 0.06, 0.025, 0.30])
+cb_evt = plt.colorbar(sc, cax=cax)
+cb_evt.set_label("event depth (km)", fontsize=8)
+cb_evt.ax.tick_params(labelsize=7)
 ax.set_xlim(lon_min, lon_max); ax.set_ylim(lat_min, lat_max)
 ax.set_aspect(1.0 / np.cos(np.radians(np.mean([lat_min, lat_max]))))
 ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
@@ -90,15 +95,29 @@ ax.legend(loc="lower left", fontsize=9)
 
 # (b) events per day
 ax = axes[0, 1]
+import matplotlib.dates as mdates
 per_day = e.groupby("day").size().sort_index()
-ax.bar(range(len(per_day)), per_day.values, color="steelblue", edgecolor="k", linewidth=0.4)
-ax.set_xticks(range(len(per_day)))
-ax.set_xticklabels(per_day.index, rotation=70, fontsize=7)
+day_dates = pd.to_datetime(per_day.index)
+ax.bar(day_dates, per_day.values, width=1.0,
+       color="steelblue", edgecolor="k", linewidth=0.3)
 ax.set_ylabel("events per day")
 ax.set_title(f"daily counts ({per_day.sum():,} total)")
 ax.grid(alpha=0.3, axis="y")
-for i, v in enumerate(per_day.values):
-    ax.text(i, v + per_day.max()*0.01, str(v), ha="center", fontsize=6.5)
+# Sensible date labels: monthly ticks, abbreviated month + 2-digit year.
+span_days = (day_dates.max() - day_dates.min()).days
+if span_days <= 60:
+    ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+elif span_days <= 180:
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+else:
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+    ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
+for lbl in ax.get_xticklabels():
+    lbl.set_rotation(30)
+    lbl.set_ha("right")
 
 # (c) depth histogram
 ax = axes[1, 0]

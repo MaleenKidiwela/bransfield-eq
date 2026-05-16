@@ -54,7 +54,7 @@ def build_vzmodel(velocity_csv: Path, out_path: Path) -> None:
     out_path.write_text("\n".join(lines) + "\n")
 
 
-def write_control(run_dir: Path, label: str) -> Path:
+def write_control(run_dir: Path, label: str, rmin: float = 0.6) -> Path:
     """Write a GrowClust control (.inp) file referencing IN/, TT/, OUT/ inside run_dir."""
     # Conservative defaults tuned for OBS networks (Bransfield ~50 km aperture):
     #   tt_dep: 0–30 km, 0.5 km grid
@@ -97,7 +97,7 @@ TT/tt.sg
    0.0      300.0    1.0
 *
 * rmin  delmax  rmsmax
-  0.6    250      0.5
+  {rmin:.3f}   250      0.5
 * rpsavgmin  rmincut  ngoodmin  iponly
    0          0         0         0
 *
@@ -141,6 +141,12 @@ def main():
     ap.add_argument("--label", default="picker_only")
     ap.add_argument("--binary", default=str(DEFAULT_BINARY))
     ap.add_argument("--velocity-csv", default="configs/velocity_model.csv")
+    ap.add_argument("--rmin", type=float, default=0.6,
+                    help="Min CC for differential-time observations to be used "
+                         "(GrowClust 'rmin'). Default 0.6 matches XC prep.")
+    ap.add_argument("--out-suffix", default="",
+                    help="Append to output filename, e.g. '_rmin065' -> "
+                         "catalogs/growclust_<label><suffix>.csv")
     args = ap.parse_args()
 
     prep_dir = REPO / "growclust" / args.label
@@ -169,7 +175,7 @@ def main():
     print(f"  vzmodel:  {(in_dir/'vzmodel.txt').stat().st_size:,} bytes")
 
     # Control file
-    ctl_path = write_control(run_dir, args.label)
+    ctl_path = write_control(run_dir, args.label, rmin=args.rmin)
     print(f"  control:  {ctl_path}")
 
     # Run binary (from run_dir so relative paths resolve)
@@ -194,7 +200,7 @@ def main():
         print(f"  [warn] growclust returned {proc.returncode} — cat file present, continuing")
 
     df = parse_growclust_cat(cat_path)
-    out_csv = REPO / "catalogs" / f"growclust_{args.label}.csv"
+    out_csv = REPO / "catalogs" / f"growclust_{args.label}{args.out_suffix}.csv"
     df.to_csv(out_csv, index=False)
     print(f"\nWrote {out_csv}  ({len(df):,} relocated events)")
     if "lat" in df.columns and "lat_orig" in df.columns:

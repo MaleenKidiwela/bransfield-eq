@@ -189,12 +189,18 @@ def collect_pair_dts(ev_a, ev_b, picks_a, picks_b, wf_cache):
 
 
 import threading
-# Numpy waveform cache: (net, sta, year, doy) -> dict with keys 'data' (float32 array
-# at FS_TARGET Hz, vertical-preferred) and 'starttime_unix' (float epoch seconds).
-# False sentinel means "tried to load and failed (file missing or unreadable)".
-_WF_CACHE = {}
+from collections import OrderedDict
+# Bounded LRU waveform cache. Each hit value is (data_float32_array_at_FS_TARGET,
+# starttime_unix). False sentinel = "tried to load, failed". When the entry count
+# exceeds _WF_CACHE_MAX, the oldest entry is evicted (the file is just re-read on
+# demand later). Set _WF_CACHE_MAX via set_wf_cache_max() before workers start.
+_WF_CACHE: "OrderedDict[tuple, object]" = OrderedDict()
 _WF_CACHE_LOCK = threading.Lock()
-_WF_CACHE_MISS = threading.Lock()    # per-key load lock to prevent double-reads
+_WF_CACHE_MAX = 1500  # ~35 MB per entry at 1 day × 100 Hz × float32 -> ~52 GiB cap
+
+def set_wf_cache_max(n: int):
+    global _WF_CACHE_MAX
+    _WF_CACHE_MAX = int(n)
 
 def _load_station_day_array(network, station, year, doy):
     """Read mseed for one station-day, return (data_array_float32_at_FS_TARGET, starttime_unix).
@@ -234,18 +240,27 @@ def _load_station_day_array(network, station, year, doy):
 
 
 def _get_wf(network, station, dt):
-    """Return (data_array, starttime_unix) for the station-day containing dt, or None."""
+    """Return (data_array, starttime_unix) for the station-day containing dt, or None.
+    Bounded LRU: on hit, mark recently used; on miss, load then evict oldest if over cap."""
     key = (network, station, dt.year, dt.dayofyear)
-    val = _WF_CACHE.get(key)
-    if val is not None:
-        return val if val is not False else None
-    # Slow path -- load while holding key-specific lock to prevent duplicate reads
-    with _WF_CACHE_MISS:
+    with _WF_CACHE_LOCK:
         val = _WF_CACHE.get(key)
         if val is not None:
+            _WF_CACHE.move_to_end(key)
             return val if val is not False else None
-        loaded = _load_station_day_array(network, station, dt.year, dt.dayofyear)
+    # Slow path: load outside the lock so other threads can still hit the cache.
+    loaded = _load_station_day_array(network, station, dt.year, dt.dayofyear)
+    with _WF_CACHE_LOCK:
+        # Re-check in case another thread loaded the same key.
+        existing = _WF_CACHE.get(key)
+        if existing is not None:
+            _WF_CACHE.move_to_end(key)
+            return existing if existing is not False else None
         _WF_CACHE[key] = loaded if loaded is not None else False
+        _WF_CACHE.move_to_end(key)
+        # Evict oldest entries until under the cap.
+        while len(_WF_CACHE) > _WF_CACHE_MAX:
+            _WF_CACHE.popitem(last=False)
     return loaded
 
 
@@ -313,9 +328,29 @@ def preload_all_station_days(picks, stations_df, workers):
 
 
 def build_wf_cache_for_event(picks_e, stations_df):
-    """Build per-pick window arrays for one event. Underlying mseed is preloaded
-    into _WF_CACHE so this is now pure numpy slicing."""
+    """Build per-pick window arrays for one event. Pre-windowing mode (the default)
+    looks each pick's window up by `pick_id` in the global PICK_WINDOWS memmap that
+    18b_prewindow_picks.py wrote -- pure numpy, no mseed I/O. Legacy mode (when
+    PICK_WINDOWS is None) falls back to the on-the-fly slice path."""
     cache = {}
+    if PICK_WINDOWS is not None:
+        for pk in picks_e.itertuples():
+            try:
+                row = stations_df.loc[pk.sta_key]
+            except KeyError:
+                continue
+            pid = getattr(pk, "pick_id", None)
+            if pid is None or pid < 0 or pid >= PICK_WINDOWS.shape[0]:
+                continue
+            arr = PICK_WINDOWS[pid]
+            # Pre-window writes zeros when the window couldn't be cut (file missing /
+            # out-of-bounds). Skip those — they have zero norm and would just produce
+            # nonsense cross-correlations.
+            if not arr.any():
+                continue
+            cache[(row.network, row.station, pk.pick_time)] = np.ascontiguousarray(arr)
+        return cache
+    # Legacy path: on-the-fly slice from per-station-day cache.
     for pk in picks_e.itertuples():
         try:
             row = stations_df.loc[pk.sta_key]
@@ -332,6 +367,10 @@ def build_wf_cache_for_event(picks_e, stations_df):
         except Exception:
             continue
     return cache
+
+
+# Module-level pre-windowed memmap, populated in main() when --prewindow path exists.
+PICK_WINDOWS = None
 
 
 def attach_sta_key(picks: pd.DataFrame, stations_df: pd.DataFrame) -> pd.DataFrame:
@@ -404,7 +443,7 @@ def write_dtcc(pairs: dict, out_path: Path):
 # --------------------------------------------------------------------------------------
 
 def main():
-    global WIN_SEC, CC_THRESH, MAX_LAG_SEC
+    global WIN_SEC, CC_THRESH, MAX_LAG_SEC, PICK_WINDOWS
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only")
     ap.add_argument("--max-dist-km", type=float, default=MAX_DIST_KM)
@@ -415,6 +454,15 @@ def main():
     ap.add_argument("--max-pairs-per-event", type=int, default=80,
                     help="Cap nearest neighbours per event; keeps runtime bounded.")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--cache-size", type=int, default=1500,
+                    help="Max station-days held in the in-memory LRU waveform cache. "
+                         "Each entry ~35 MB at 1 day × 100 Hz × float32; 1500 -> ~52 GiB. "
+                         "Bounded to keep the JupyterHub pod under its ~187 GiB cgroup cap.")
+    ap.add_argument("--preload", action="store_true",
+                    help="Eagerly preload every needed station-day into the LRU "
+                         "cache before XC begins (legacy 'front-load' behavior). "
+                         "Only sensible when --cache-size >= number of unique "
+                         "station-days; otherwise eviction defeats the point.")
     args = ap.parse_args()
 
     # Override module globals so XC kernel sees consistent values
@@ -430,6 +478,31 @@ def main():
     stations_df = load_stations()
     picks = attach_sta_key(picks, stations_df)
     print(f"  events: {len(events):,}   picks: {len(picks):,}")
+
+    # Pre-windowed snippet memmap (written by scripts/18b_prewindow_picks.py).
+    # Strongly preferred over on-the-fly mseed reads — at 42k events the legacy
+    # path projected ~12-42 days even with LRU + sort. See notes/17_session_2026-05-13.md.
+    mm_path = out_dir / "pick_windows.npy"
+    idx_path = out_dir / "pick_index.parquet"
+    if mm_path.exists() and idx_path.exists():
+        print(f"  loading pre-windowed snippets from {mm_path.name} ...")
+        PICK_WINDOWS = np.load(mm_path, mmap_mode="r")
+        idx = pd.read_parquet(idx_path)
+        # 18b writes one row per pick in the same order as the input picks CSV,
+        # so pick_id == row index. load_pyocto() doesn't reorder, so we can just
+        # take the index. Sanity-check length matches.
+        if len(picks) != len(idx):
+            sys.exit(f"pick_index.parquet has {len(idx)} rows but loaded picks "
+                     f"has {len(picks)} -- regenerate Stage 2.5.")
+        picks = picks.reset_index(drop=True)
+        picks["pick_id"] = picks.index.astype(np.int64)
+        n_valid = int(idx["valid"].sum()) if "valid" in idx.columns else len(idx)
+        print(f"  PICK_WINDOWS shape {PICK_WINDOWS.shape}  "
+              f"({n_valid:,} valid / {len(idx):,} picks)")
+    else:
+        print(f"  [warn] no pre-windowed snippets found at {mm_path} -- "
+              f"falling back to legacy on-the-fly mseed reads (very slow).")
+        PICK_WINDOWS = None
 
     # Spatial neighbour search (flat-Earth)
     lat0 = events["latitude"].mean() if "latitude" in events.columns else events["lat"].mean()
@@ -466,13 +539,36 @@ def main():
     events_idx_col = events["event_idx"] if "event_idx" in events.columns else events.index
     event_idx_values = list(events_idx_col)
 
-    # Group pairs by anchor event (the lower-index event) for cache reuse
+    # Group pairs by anchor event (the lower-index event) for cache reuse.
+    # We sort anchors AND each anchor's partner list by origin time below so the
+    # LRU waveform cache sees temporal locality (adjacent anchors share most
+    # station-days). Without this sort, 32 threads working anchors in arbitrary
+    # order touch thousands of unique station-days per second and the cache
+    # thrashes — observed 2026-05-13 with ETA ~42 days.
     pairs_by_anchor = defaultdict(list)
     for a, b in pair_set:
         pairs_by_anchor[a].append(b)
 
-    # Preload every needed mseed file once -- big upfront win vs. re-reading per pair
-    preload_all_station_days(picks, stations_df, workers=min(args.workers * 2, 64))
+    # Compute event origin-time-in-seconds (cheap key) once, for sorting.
+    if "origin_time" in events.columns:
+        _ev_ts = events["origin_time"].astype("int64").values // 10**9  # ns -> s
+    else:
+        _ev_ts = events["time"].astype("int64").values
+    # Sort partners within each anchor by their event time.
+    for a in pairs_by_anchor:
+        pairs_by_anchor[a].sort(key=lambda i: _ev_ts[i])
+
+    if PICK_WINDOWS is None:
+        # Legacy fallback: bounded LRU of on-the-fly mseed reads.
+        set_wf_cache_max(args.cache_size)
+        print(f"  lazy waveform cache enabled (LRU cap = {args.cache_size} station-days, "
+              f"~{args.cache_size * 35 / 1024:.1f} GiB)", flush=True)
+        if args.preload:
+            preload_all_station_days(picks, stations_df,
+                                     workers=min(args.workers * 2, 64))
+    else:
+        print(f"  using pre-windowed snippets in memmap (no station-day cache needed)",
+              flush=True)
 
     print(f"  cross-correlating with {args.workers} threads ...")
     import time as _time
@@ -503,7 +599,9 @@ def main():
                 local_results[(anchor + 1, b + 1)] = rows
         return local_results
 
-    anchors = list(pairs_by_anchor.keys())
+    # Sort anchors by origin time so ThreadPoolExecutor processes near-in-time
+    # events together -- they share most station-days, giving the LRU real locality.
+    anchors = sorted(pairs_by_anchor.keys(), key=lambda i: _ev_ts[i])
     total_anchors = len(anchors)
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futures = {ex.submit(_process_anchor, a): a for a in anchors}

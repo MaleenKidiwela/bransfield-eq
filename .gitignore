@@ -42,3 +42,13 @@ catalogs/pyocto_chunks/
 # Large bathymetry grid (rebuildable from MGDS download)
 notes/figures/Orca_bathymetry.nc
 
+# hypoDD run directories (large; regenerable from scripts 22-26)
+hypodd/
+# Regenerable analysis artifacts
+catalogs/event_spectra.npy
+# Run logs
+hypoDD.log
+ph2dt.log
+# hypoDD animations (large mp4s; regenerable from animate_hypodd*.py)
+notes/figures/**/*.mp4
+

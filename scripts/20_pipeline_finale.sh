@@ -51,11 +51,36 @@ else:
     print(f"  events already has lat/lon/depth; skipping")
 PY
 
+# Pin BLAS / OMP threads to 1 so each worker doesn't oversubscribe the 32 CPUs.
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+# ---- Stage 2.5: Pre-window every pick into a memmap ----
+# Collapses XC working set from ~420 GB (station-day cache) to ~580 MB. Must run
+# before Stage 3. See notes/17_session_2026-05-13.md for rationale.
+PICK_MM="growclust/${LABEL}/pick_windows.npy"
+if [ ! -s "$PICK_MM" ]; then
+    log "launching Stage 2.5 (pre-window picks) ..."
+    .venv/bin/python -u scripts/18b_prewindow_picks.py \
+        --label "$LABEL" \
+        --workers 32 \
+        >> "$FINAL_LOG" 2>&1
+    if [ ! -s "$PICK_MM" ]; then
+        log "!!! Pre-window failed: $PICK_MM missing or empty"
+        exit 1
+    fi
+    log "Stage 2.5 done: $(du -h "$PICK_MM" | cut -f1) pre-windowed snippet array"
+else
+    log "Stage 2.5 already done: $PICK_MM present, skipping"
+fi
+
 # ---- Stage 3: XC prep ----
 log "launching Stage 3 (XC prep) ..."
 .venv/bin/python -u scripts/18_growclust_xc_prep.py \
     --label "$LABEL" \
-    --workers 48 \
+    --workers 32 \
     --max-pairs-per-event 80 \
     >> "$FINAL_LOG" 2>&1
 
