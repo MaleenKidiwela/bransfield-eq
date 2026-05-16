@@ -6,10 +6,10 @@ BRAVOSEIS ocean-bottom seismometer array (`ZX`) and surrounding land stations
 event catalog.
 
 ```
-   waveforms      picks            events           relocated events
-  ──────────► ─────────────► ────────────────► ──────────────────────►
-  (FDSN dl)   (PhaseNet,      (pyocto           (GrowClust XC
-              EQT, OBST)       associator)       relocations)
+   waveforms      picks            events            shot-filtered     relocated events
+  ──────────► ─────────────► ────────────────► ───────────────────► ─────────────────────►
+  (FDSN dl)   (PhaseNet,      (pyocto            (active-source       (GrowClust XC +
+              EQT, OBST)       associator)        shot removal)        HypoDD Stage A/B)
 ```
 
 ## Pipeline stages
@@ -17,11 +17,16 @@ event catalog.
 | # | Stage | Script(s) | Output |
 |---|---|---|---|
 | 0 | Inventory + waveform download | `01_data_inventory.py`, `02_download_waveforms.py` | `data/waveforms/`, `data/stationxml/` |
-| 1 | ML picking | `03_run_phasenet.py` (supports PhaseNet / EQTransformer / OBSTransformer) | `catalogs/picks*/` |
+| 1 | ML picking | `03_run_phasenet.py` (PhaseNet / EQTransformer / OBSTransformer) | `catalogs/picks*/` |
 | 1b | (optional) OBS denoising + finetuned PhaseNet | `07_train_obs_denoiser.py`, `11_run_denoised_picker.py`, `09_finetune_phasenet.py` | denoised pick sets |
 | 2 | Association | `17_pyocto_associate.py` | `catalogs/pyocto_events_*.csv` |
-| 3 | Differential-time prep (waveform XC) | `18_growclust_xc_prep.py` | `growclust/<label>/dt.cc` |
-| 4 | Relative relocation | `19_run_growclust.py` | `catalogs/growclust_*.csv` |
+| 2b | Active-source shot removal | `discriminate_shots.py` (+ optional `train_shot_classifier.py`) | `catalogs/pyocto_events_*_no_shots.csv` |
+| 3a | Differential-time prep (waveform XC) | `18_growclust_xc_prep.py` | `growclust/<label>/dt.cc` |
+| 3b | GrowClust relative relocation | `19_run_growclust.py` | `catalogs/growclust_*.csv` |
+| 4a | HypoDD input prep | `22_pyocto_to_hypodd_input.py` | `hypodd/<label>/{phase,station}.dat` |
+| 4b | ph2dt differential times | `23_run_ph2dt.py` | `hypodd/<label>/dt.ct` |
+| 4c | HypoDD Stage A (pruned backbone) | `24_run_hypodd.py` | `catalogs/hypodd_<label>_pruned.csv` |
+| 4d | HypoDD Stage B (dense sub-clusters, k-means partitioned, anchored to Stage A) | `25_stage_b_partition_and_run.py`, `26_merge_stage_b.py` | `catalogs/hypodd_stage_b_*.csv` |
 
 Stages 2–4 require a 1D velocity model (`configs/velocity_model.csv`,
 sea-level-referenced with a 1.3 km water layer prepended to a 1D average of
@@ -69,8 +74,18 @@ python scripts/17_pyocto_associate.py \
 # Stage 3: cross-correlation differential times
 python scripts/18_growclust_xc_prep.py --label picker_only --workers 8
 
-# Stage 4: GrowClust relocations
+# Stage 2b: flag and remove active-source shots
+python scripts/discriminate_shots.py --label picker_only --tol-sec 1.0
+
+# Stage 3: cross-correlation differential times + GrowClust
 python scripts/19_run_growclust.py --label picker_only
+
+# Stage 4: HypoDD pipeline (Stage A backbone, then Stage B dense sub-clusters)
+python scripts/22_pyocto_to_hypodd_input.py --label picker_only_no_shots
+python scripts/23_run_ph2dt.py --label picker_only_no_shots
+python scripts/24_run_hypodd.py --label picker_only_pruned
+python scripts/25_stage_b_partition_and_run.py --n-regions 8 --buffer-km 1.5
+python scripts/26_merge_stage_b.py
 ```
 
 The four pipeline stages are chained via `scripts/wait_then_launch_*.sh`
@@ -102,8 +117,20 @@ scripts/
   15_anomaly_score*           anomaly detection at manual picks
   16_stalta_on_dd.py          STA/LTA baseline on denoised waveforms
   17_pyocto_associate.py      Stage 2 associator
-  18_growclust_xc_prep.py     Stage 3 differential-time prep
-  19_run_growclust.py         Stage 4 relative relocation
+  18_growclust_xc_prep.py     Stage 3a differential-time prep (waveform XC)
+  18b_prewindow_picks.py      time-window picks before XC (jan2019 / prewindow runs)
+  19_run_growclust.py         Stage 3b relative relocation
+  22_pyocto_to_hypodd_input.py Stage 4a pyocto -> hypoDD phase.dat / station.dat
+  23_run_ph2dt.py             Stage 4b ph2dt -> dt.ct
+  24_run_hypodd.py            Stage 4c HypoDD Stage A (pruned backbone)
+  25_stage_b_partition_and_run.py  Stage 4d k-means partition + per-region HypoDD run
+  26_merge_stage_b.py         concatenate Stage B sub-cluster outputs
+  discriminate_shots.py       Stage 2b: temporal matching against shotfiles/
+  train_shot_classifier.py    optional spectral classifier (event_spectra.npy features)
+  extract_event_spectra.py    build per-event spectra (input to shot classifier)
+  filter_hypodd_strict.py     strict_A QC subset (paper-defensible relocations)
+  animate_hypodd.py, animate_hypodd_belowfloor.py  4-D HypoDD relocation animations
+  plot_growclust_*, plot_hypodd_*, compare_growclust_*  relocation visualizations
   apply_S1_corrections.py     patch station_geometry.csv + BRA05 clock from Kidiwela+ SI
   build_velocity_model.py     Orca .nc → 1D CSV + plot
   compare_station_geometry_S1.py  cross-check helper
@@ -113,7 +140,11 @@ scripts/
 
 src/bransfield_eq/            shared utilities (config, station resolution, manual-pick parsing)
 
-notes/                        design notes and session logs (06–15 chronological)
+notes/                        design notes and session logs (06–19 chronological)
+
+shotfiles/                    active-source shot times for Stage 2b shot removal
+                              (ORCA MCS / ORCA tomo / EDA MCS / Rift MCS / Other MCS)
+hypodd/                       gitignored — HypoDD run dirs (regenerable from scripts 22–26)
 ```
 
 ## Velocity model
@@ -183,6 +214,10 @@ change.
 - GrowClust XC prep is the slowest stage; `--workers 8` parallelizes over event pairs.
 - The compiled GrowClust binary lives at `/home/jovyan/GrowClust/SRC/growclust`
   on the cluster (compile from upstream source on a fresh setup).
+- HypoDD / ph2dt: compiled binaries expected on `$PATH` (`hypoDD`, `ph2dt`).
+  A year-long monolithic HypoDD run does not scale (~5 days wall) — use the
+  Stage A backbone + Stage B per-region sub-cluster approach (script 25) which
+  finishes in ~15 minutes.
 
 ## References
 
