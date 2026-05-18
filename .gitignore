@@ -52,3 +52,21 @@ ph2dt.log
 # hypoDD animations (large mp4s; regenerable from animate_hypodd*.py)
 notes/figures/**/*.mp4
 
+# NLLoc outputs and large binary grids (regenerable from scripts 38/39)
+nlloc/output/
+nlloc/obs/
+nlloc/run/*.in
+!nlloc/run/1995freeZ_control.in
+nlloc/run/g2t_tmp/
+# Travel-time grids (1.5-3 GB total; rebuild via scripts 27/39)
+nlloc/time/*.time.buf
+nlloc/time/*.time.hdr
+# Velocity model grids (regenerable from srModel_3DEQ.mat via script 38)
+nlloc/model/
+# Stingray P-only 3D model (~41 MB; provided externally, not in git)
+nlloc/srModel_3DEQ.mat
+nlloc/Hypo_3D.mat
+# Generated NLLoc per-event catalogs (regenerable; some are large)
+catalogs/nlloc_*.csv
+catalogs/hybrid_*.csv
+

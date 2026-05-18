@@ -27,6 +27,8 @@ event catalog.
 | 4b | ph2dt differential times | `23_run_ph2dt.py` | `hypodd/<label>/dt.ct` |
 | 4c | HypoDD Stage A (pruned backbone) | `24_run_hypodd.py` | `catalogs/hypodd_<label>_pruned.csv` |
 | 4d | HypoDD Stage B (dense sub-clusters, k-means partitioned, anchored to Stage A) | `25_stage_b_partition_and_run.py`, `26_merge_stage_b.py` | `catalogs/hypodd_stage_b_*.csv` |
+| 5a | NLLoc absolute relocation (probabilistic, σ ellipsoids) | `27_patch_nlloc_hdr.py`, `28_pyocto_to_nlloc_obs.py`, `29_write_nlloc_control.py`, `30_run_nlloc.py`, `31_nlloc_hyp_to_catalog.py` | `catalogs/nlloc_*.csv` |
+| 5b | Hybrid catalog (NLLoc absolutes anchoring HypoDD relative geometry) | `32_hybrid_catalog.py` | `catalogs/hybrid_*.csv` |
 
 Stages 2–4 require a 1D velocity model (`configs/velocity_model.csv`,
 sea-level-referenced with a 1.3 km water layer prepended to a 1D average of
@@ -86,6 +88,14 @@ python scripts/23_run_ph2dt.py --label picker_only_no_shots
 python scripts/24_run_hypodd.py --label picker_only_pruned
 python scripts/25_stage_b_partition_and_run.py --n-regions 8 --buffer-km 1.5
 python scripts/26_merge_stage_b.py
+
+# Stage 5: NLLoc absolute relocation (3D Orca Stingray P grids, Vp/Vs=1.78)
+python scripts/27_patch_nlloc_hdr.py            # one-time .hdr origin fix
+python scripts/28_pyocto_to_nlloc_obs.py        # writes nlloc/obs/<label>.obs
+python scripts/29_write_nlloc_control.py        # writes nlloc/run/<label>.in
+python scripts/30_run_nlloc.py --shards 16      # ~30 min on 16 cores
+python scripts/31_nlloc_hyp_to_catalog.py       # writes catalogs/nlloc_*.csv
+python scripts/32_hybrid_catalog.py             # writes catalogs/hybrid_*.csv
 ```
 
 The four pipeline stages are chained via `scripts/wait_then_launch_*.sh`
@@ -125,6 +135,12 @@ scripts/
   24_run_hypodd.py            Stage 4c HypoDD Stage A (pruned backbone)
   25_stage_b_partition_and_run.py  Stage 4d k-means partition + per-region HypoDD run
   26_merge_stage_b.py         concatenate Stage B sub-cluster outputs
+  27_patch_nlloc_hdr.py       Stage 5a: fix sign-stripped origin in nlloc/time/ORCA.P.*.time.hdr (idempotent)
+  28_pyocto_to_nlloc_obs.py   Stage 5a: pyocto picks -> NLLOC_OBS multi-event obs file
+  29_write_nlloc_control.py   Stage 5a: render NLLoc control file (TRANS SIMPLE Stingray, Vp/Vs=1.78, oct-tree)
+  30_run_nlloc.py             Stage 5a: NLLoc runner with optional shard-parallel mode
+  31_nlloc_hyp_to_catalog.py  Stage 5a: parse .hyp -> catalogs/nlloc_*.csv
+  32_hybrid_catalog.py        Stage 5b: anchor HypoDD relative geometry to NLLoc absolutes per cluster
   discriminate_shots.py       Stage 2b: temporal matching against shotfiles/
   train_shot_classifier.py    optional spectral classifier (event_spectra.npy features)
   extract_event_spectra.py    build per-event spectra (input to shot classifier)
@@ -145,6 +161,14 @@ notes/                        design notes and session logs (06–19 chronologic
 shotfiles/                    active-source shot times for Stage 2b shot removal
                               (ORCA MCS / ORCA tomo / EDA MCS / Rift MCS / Other MCS)
 hypodd/                       gitignored — HypoDD run dirs (regenerable from scripts 22–26)
+
+nlloc/
+  srModel_3DEQ.mat            Stingray 3D Orca P velocity model (input; tracked)
+  time/ORCA.P.BRA*.time.*     Stingray-generated P travel-time grids (tracked)
+  phasefiles/                 example NLLOC_OBS phase file from manual-pick run (tracked)
+  run/1995freeZ_control.in    NLLoc control file template (tracked)
+  obs/, output/               gitignored — generated per-run obs and .hyp outputs
+  run/<label>.in              gitignored — generated per-run NLLoc control files
 ```
 
 ## Velocity model
@@ -218,6 +242,12 @@ change.
   A year-long monolithic HypoDD run does not scale (~5 days wall) — use the
   Stage A backbone + Stage B per-region sub-cluster approach (script 25) which
   finishes in ~15 minutes.
+- NLLoc: build from https://github.com/alomax/NonLinLoc with `CC="gcc -fcommon"`
+  to work around modern-linker duplicate-symbol errors. Install `NLLoc`,
+  `Vel2Grid`, `Grid2Time` to `~/.local/bin/`. Phase 1 reuses the 3D Stingray-
+  generated P travel-time grids in `nlloc/time/ORCA.P.BRA*.time.{hdr,buf}`;
+  S travel times are derived internally via Vp/Vs (default 1.78).
+  Rebuilding new grids requires MATLAB + Stingray (not on this cluster).
 
 ## References
 
