@@ -19,16 +19,24 @@ REPO = Path(__file__).resolve().parent.parent
 ST = REPO / "catalogs" / "station_geometry.csv"
 BATHY = REPO / "notes" / "figures" / "Orca_bathymetry.nc"
 
+GRID_BOUNDS = {
+    "ORCA":    dict(gx_min=-29.8,  gx_max=-29.8 + 0.2 * 300,
+                    gy_min=-20.0,  gy_max=-20.0 + 0.2 * 200),
+    "ORCA_v2": dict(gx_min=-150.0, gx_max=-150.0 + 0.4 * 575,
+                    gy_min=-110.0, gy_max=-110.0 + 0.4 * 450),
+}
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--label", default="picker_only_no_shots")
+ap.add_argument("--tt-prefix", default="ORCA", choices=sorted(GRID_BOUNDS.keys()))
 args = ap.parse_args()
 
 nl = pd.read_csv(REPO / "catalogs" / f"nlloc_{args.label}.csv")
 print(f"loaded {len(nl):,} NLLoc events")
 
-# Grid bounds (from nlloc/run/<label>.in: LOCGRID 301 201 126 -29.8 -20.0 0 0.2 ...)
-GX_MIN, GX_MAX = -29.8, -29.8 + 0.2 * 300
-GY_MIN, GY_MAX = -20.0, -20.0 + 0.2 * 200
+g = GRID_BOUNDS[args.tt_prefix]
+GX_MIN, GX_MAX = g["gx_min"], g["gx_max"]
+GY_MIN, GY_MAX = g["gy_min"], g["gy_max"]
 nl["on_boundary"] = (
     (nl.nlloc_x_km - GX_MIN < 0.5) | (GX_MAX - nl.nlloc_x_km < 0.5) |
     (nl.nlloc_y_km - GY_MIN < 0.5) | (GY_MAX - nl.nlloc_y_km < 0.5)

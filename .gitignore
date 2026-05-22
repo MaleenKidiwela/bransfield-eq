@@ -66,7 +66,15 @@ nlloc/model/
 # Stingray P-only 3D model (~41 MB; provided externally, not in git)
 nlloc/srModel_3DEQ.mat
 nlloc/Hypo_3D.mat
+# Hand-curated phase file (large; regenerable via manual_picks_to_pyocto.py)
+nlloc/phasefiles/
 # Generated NLLoc per-event catalogs (regenerable; some are large)
 catalogs/nlloc_*.csv
 catalogs/hybrid_*.csv
+
+# Local Claude Code agent state
+.claude/
+
+# Per-event refinement figures (regenerable via scripts/42, 44)
+notes/figures/associations/
 

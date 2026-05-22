@@ -1,15 +1,19 @@
 """Parse NLLoc per-event .hyp files into a single catalog CSV.
 
-Joins back to pyocto event_idx via the obs_order sidecar written by script 28:
-the .sum.grid0.loc.hyp concatenated SUM file (or the per-shard SUMs combined
-by script 30) lists events in the same order as the input .obs file, which
-in turn matches the obs_order column of <label>.event_order.csv.
+Joins back to pyocto event_idx via the obs_order sidecar written by script 28.
+NLLoc processes events serially in the order they appear in the input .obs
+file, so the i-th per-event .hyp file (sorted by filename, which encodes the
+first observation time) corresponds to obs_order = i.
 
-For sharded runs we still get per-event hyp files (loc.YYYYMMDD.HHMMSS.*.hyp)
-distributed across shard_XX/ subdirs; these are the authoritative source.
-We sort them by origin-time and match by index after also sorting the
-event_order map by pyocto origin_time. That works because there are no
-duplicate origin-times at sub-second resolution in either side.
+Sharded runs (script 30 with --shards N): script 30 distributes obs blocks
+round-robin (block k goes to shard k % N), so for the j-th hyp within
+shard s the global obs_order is j * N + s. We detect shard_XX/ subdirs
+and apply the shard-aware mapping; otherwise we treat the run as a single
+input stream.
+
+DO NOT sort the global hyp list by computed origin-time -- NLLoc can shift
+OT by hours for marginal events, which scrambles the join. (That was the
+2026-05-20 bug: ~half of v2 mappings were wrong.)
 
 Output columns:
     event_idx, origin_time (UTC ISO), lat, lon, depth_km,
@@ -80,41 +84,69 @@ def parse_hyp(path: Path) -> dict | None:
     return rec
 
 
+def _collect_hyps_in_obs_order(out_dir: Path) -> list[Path]:
+    """Return per-event .hyp files indexed by global obs_order. Index `i`
+    of the returned list corresponds to obs_order == i (or None when that
+    slot has no parsed hyp -- e.g. an event NLLoc failed to locate)."""
+    shard_dirs = sorted(d for d in out_dir.iterdir()
+                        if d.is_dir() and d.name.startswith("shard_"))
+    if shard_dirs:
+        n_shards = len(shard_dirs)
+        per_shard: list[list[Path]] = []
+        for sh in shard_dirs:
+            hyps = sorted([h for h in sh.glob("loc.20*.grid0.loc.hyp")
+                           if "last" not in h.name])
+            per_shard.append(hyps)
+        max_local = max(len(hs) for hs in per_shard)
+        ordered: list[Path | None] = [None] * (max_local * n_shards)
+        for s_idx, hyps in enumerate(per_shard):
+            for local_i, h in enumerate(hyps):
+                ordered[local_i * n_shards + s_idx] = h
+        # trim trailing Nones
+        while ordered and ordered[-1] is None:
+            ordered.pop()
+        return ordered
+    # Single-shard run: per-event hyps live directly under out_dir.
+    return sorted([h for h in out_dir.glob("loc.20*.grid0.loc.hyp")
+                   if "last" not in h.name])
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="picker_only_no_shots")
     args = p.parse_args()
 
     out_dir = REPO / "nlloc" / "output" / args.label
-    hyps = sorted([h for h in out_dir.rglob("loc.20*.grid0.loc.hyp")
-                   if "last" not in h.name])
-    if not hyps:
+    ordered_hyps = _collect_hyps_in_obs_order(out_dir)
+    if not ordered_hyps:
         raise SystemExit(f"no .hyp files in {out_dir}")
-    print(f"parsing {len(hyps)} hyp files...")
-    recs = []
-    for h in hyps:
+    n_slots = len(ordered_hyps)
+    n_have = sum(h is not None for h in ordered_hyps)
+    print(f"obs slots: {n_slots}; per-event hyp files present: {n_have}")
+
+    recs: list[dict] = []
+    obs_orders: list[int] = []
+    for oo, h in enumerate(ordered_hyps):
+        if h is None:
+            continue
         r = parse_hyp(h)
-        if r is not None:
-            recs.append(r)
-    nlloc = pd.DataFrame.from_records(recs).sort_values("origin_time").reset_index(drop=True)
+        if r is None:
+            continue
+        recs.append(r)
+        obs_orders.append(oo)
+    nlloc = pd.DataFrame.from_records(recs)
+    nlloc["obs_order"] = obs_orders
     print(f"parsed {len(nlloc)} events")
 
-    # Match by sorted-time order to event_order sidecar (also sort that by pyocto OT)
     order_path = REPO / "nlloc" / "obs" / f"{args.label}.event_order.csv"
     order = pd.read_csv(order_path)
-    ev_pyocto = pd.read_csv(REPO / "catalogs" / f"pyocto_events_{args.label}.csv",
-                            usecols=["event_idx", "origin_time"])
-    order = order.merge(ev_pyocto, on="event_idx")
-    order["origin_time"] = pd.to_datetime(order["origin_time"], utc=True)
-    order = order.sort_values("origin_time").reset_index(drop=True)
-
-    if len(order) != len(nlloc):
-        print(f"WARN: order map has {len(order)} events, NLLoc parsed {len(nlloc)}")
-        n = min(len(order), len(nlloc))
-        order = order.iloc[:n]
-        nlloc = nlloc.iloc[:n]
-
-    nlloc["event_idx"] = order["event_idx"].values
+    nlloc = nlloc.merge(order, on="obs_order", how="left")
+    missing = nlloc.event_idx.isna().sum()
+    if missing:
+        print(f"WARN: {missing} parsed hyps have no event_order entry")
+    nlloc = nlloc.dropna(subset=["event_idx"]).copy()
+    nlloc["event_idx"] = nlloc["event_idx"].astype(int)
+    nlloc = nlloc.sort_values("origin_time").reset_index(drop=True)
     cols = ["event_idx", "origin_time", "lat", "lon", "depth_km",
             "sigma_x_km", "sigma_y_km", "sigma_z_km",
             "semi_minor_km", "semi_major_km", "az_max_horunc_deg",
