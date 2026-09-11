@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from bransfield_eq.timeutil import epoch_ns  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 WAVE_DIR = REPO / "data" / "waveforms"
@@ -551,9 +552,9 @@ def main():
 
     # Compute event origin-time-in-seconds (cheap key) once, for sorting.
     if "origin_time" in events.columns:
-        _ev_ts = events["origin_time"].astype("int64").values // 10**9  # ns -> s
+        _ev_ts = (epoch_ns(events["origin_time"]) // 10**9).values  # -> epoch seconds
     else:
-        _ev_ts = events["time"].astype("int64").values
+        _ev_ts = events["time"].values  # already epoch seconds
     # Sort partners within each anchor by their event time.
     for a in pairs_by_anchor:
         pairs_by_anchor[a].sort(key=lambda i: _ev_ts[i])

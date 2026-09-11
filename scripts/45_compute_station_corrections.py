@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from bransfield_eq.timeutil import epoch_seconds  # noqa: E402
 from obspy import UTCDateTime
 
 REPO = Path(__file__).resolve().parent.parent
@@ -40,7 +41,7 @@ OUT_CSV = REPO / "catalogs" / "station_corrections.csv"
 def main() -> None:
     rel = pd.read_csv(NLLOC_RELIABLE)
     pk = pd.read_csv(PK_CSV)
-    rel["origin_epoch"] = pd.to_datetime(rel.origin_time, utc=True).astype("int64") / 1e9
+    rel["origin_epoch"] = epoch_seconds(rel.origin_time)
     print(f"reliable events: {len(rel)}   pyocto picks: {len(pk):,}")
 
     # Cache predictions per event (most events touch ~10 stations)

@@ -40,6 +40,7 @@ from obspy.signal.trigger import classic_sta_lta, trigger_onset
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 from bransfield_eq.config import mseed_path, daterange, Config  # noqa: E402
+from bransfield_eq.timeutil import epoch_ns  # noqa: E402
 
 import seisbench.models as sbm  # noqa: E402
 
@@ -206,7 +207,7 @@ def main():
             except (pd.errors.EmptyDataError, pd.errors.ParserError):
                 continue
             if df.empty: continue
-            ts = pd.to_datetime(df["time"], utc=True).astype("int64") // 10**9
+            ts = epoch_ns(df["time"]) // 10**9
             trigger_times[(net, sta, day)] = np.array(sorted(ts.values))
 
     # Match

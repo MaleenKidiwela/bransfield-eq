@@ -54,6 +54,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
 from bransfield_eq.config import PICK_DIR, REPO  # noqa: E402
+from bransfield_eq.timeutil import epoch_ns  # noqa: E402
 
 MANUAL_CSV = REPO / "catalogs" / "manual_picks.csv"
 REPORT_CSV = REPO / "catalogs" / "validation_report.csv"
@@ -148,7 +149,7 @@ def match_one_group(manual: pd.DataFrame, ml: pd.DataFrame,
         return manual, 0, 0
 
     ml_used = np.zeros(len(ml), dtype=bool)
-    ml_t_ns = ml["t"].astype("int64").values
+    ml_t_ns = epoch_ns(ml["t"]).values
     for i, row in manual.iterrows():
         man_t_ns = row["t"].value
         # binary search for the closest unused ML pick
@@ -198,8 +199,8 @@ def main() -> None:
         ot["origin_t"] = pd.to_datetime(ot["origin_time"], utc=True, errors="coerce")
         ot = ot.dropna(subset=["origin_t"]).sort_values("origin_t")
         if len(ot):
-            ot_ns = ot["origin_t"].astype("int64").values
-            ml_ns = ml["t"].astype("int64").values
+            ot_ns = epoch_ns(ot["origin_t"]).values
+            ml_ns = epoch_ns(ml["t"]).values
             tol_ns = int(args.event_window * 1e9)
             keep = np.zeros(len(ml), dtype=bool)
             idx = np.searchsorted(ot_ns, ml_ns)

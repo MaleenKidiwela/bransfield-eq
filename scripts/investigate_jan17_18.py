@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
+from bransfield_eq.timeutil import epoch_ns  # noqa: E402
 from netCDF4 import Dataset
 
 REPO = Path(__file__).resolve().parent.parent
@@ -88,7 +89,7 @@ ob = stations[stations.network == "ZX"]
 ax.scatter(ob.longitude, ob.latitude, marker="^", s=50, c="white",
            edgecolors="k", linewidths=0.7, zorder=8)
 sub = ev[jan17_18]
-ax.scatter(sub.longitude, sub.latitude, c=sub.origin_time.astype("int64"),
+ax.scatter(sub.longitude, sub.latitude, c=epoch_ns(sub.origin_time),
            cmap="plasma", s=8, alpha=0.7, zorder=7)
 ax.set_xlim(-60, -57.5); ax.set_ylim(-63.0, -62.0)
 ax.set_aspect(1.0 / np.cos(np.radians(-62.5)))

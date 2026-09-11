@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from bransfield_eq.timeutil import epoch_ms
 
 from .config import REPO
 
@@ -295,7 +296,7 @@ def dedup_picks(df: pd.DataFrame) -> pd.DataFrame:
         return df
     n0 = len(df)
     df = df.copy()
-    df["_t_ms"] = pd.to_datetime(df["pick_time"], errors="coerce").astype("int64") // 10**6
+    df["_t_ms"] = epoch_ms(df["pick_time"])
     df = df.drop_duplicates(subset=["station", "phase", "_t_ms"], keep="first")
     df = df.drop(columns=["_t_ms"])
     print(f"  deduped {n0 - len(df)} duplicate picks across source files")

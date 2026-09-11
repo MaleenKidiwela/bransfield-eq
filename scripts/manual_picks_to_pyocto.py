@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from bransfield_eq.timeutil import epoch_ns, epoch_seconds  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -45,7 +46,7 @@ def main():
     ev = ev.sort_values("origin_time").reset_index(drop=True)
     ev["event_idx"] = ev.index.astype(int)
     ev["idx"] = ev["event_idx"]
-    ev["time"] = ev["origin_time"].astype("int64") // 10**9
+    ev["time"] = epoch_ns(ev["origin_time"]) // 10**9
     ev["latitude"] = DEFAULT_LAT
     ev["longitude"] = DEFAULT_LON
     ev["depth"] = DEFAULT_DEP
@@ -61,7 +62,7 @@ def main():
     pk["event_idx"] = pk["event_id"].map(eid_to_idx)
     pk["pick_idx"] = pk.groupby("event_idx").cumcount()
     pk["station"] = pk["network"].astype(str) + "." + pk["station"].astype(str)
-    pk["time"] = pk["pick_time_dt"].astype("int64") / 10**9
+    pk["time"] = epoch_seconds(pk["pick_time_dt"])
     # Convert per-pick uncertainty (s) to a "prob"-like score in [0.2, 1.0]:
     # smaller uncertainty -> higher prob. Cap at ±0.5 s.
     pk["uncertainty_s"] = pd.to_numeric(pk["uncertainty_s"], errors="coerce").fillna(0.2)
