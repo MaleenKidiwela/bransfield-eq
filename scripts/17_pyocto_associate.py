@@ -44,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from bransfield_eq.timeutil import epoch_seconds, assert_nanosecond_sanity  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -134,7 +135,9 @@ def load_velocity_model(path: Path, vpvs_ratio: float = 1.78):
     return pyocto.VelocityModel1D(path=cache, tolerance=2.0)
 
 
-def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
+def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str,
+                          sources=(("picks", "P"), ("picks_obst_01", "PS")),
+                          prob_min: float = 0.0) -> pd.DataFrame:
     """Build the unified pick dataframe in PyOcto format:
         columns = station, time (UTCDateTime), phase ('P' or 'S'), prob (optional)
     """
@@ -157,29 +160,13 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
 
     rows = []
     if picker_pool != "manual_only":   # always load picker output unless explicitly manual-only
-        # PhaseNet P only
-        pn_dir = REPO / "catalogs" / "picks"
-        if pn_dir.exists():
-            for sd in sorted(pn_dir.iterdir()):
-                if not sd.is_dir(): continue
-                try: net, sta = sd.name.split(".")
-                except ValueError: continue
-                for csv in _candidate_csvs(sd):
-                    try: d = pd.read_csv(csv)
-                    except (pd.errors.EmptyDataError, pd.errors.ParserError): continue
-                    if d.empty: continue
-                    d = d.copy()
-                    d["t"] = pd.to_datetime(d.time, utc=True, format="ISO8601")
-                    d = d[(d.t >= start_pd) & (d.t < end_pd)]
-                    d = d[d.phase.str.upper().str[0] == "P"]   # PhaseNet P only
-                    if d.empty: continue
-                    d["station"] = f"{net}.{sta}"
-                    d["phase"] = "P"
-                    rows.append(d[["station", "t", "phase", "prob"]])
-        # OBSTransformer P+S
-        ob_dir = REPO / "catalogs" / "picks_obst_01"
-        if ob_dir.exists():
-            for sd in sorted(ob_dir.iterdir()):
+        for subdir, phases in sources:
+            sdir = REPO / "catalogs" / subdir
+            if not sdir.exists():
+                raise SystemExit(f"--pick-sources: catalogs/{subdir} does not exist")
+            want = [c for c in phases.upper() if c in ("P", "S")]
+            n_before = sum(len(r) for r in rows)
+            for sd in sorted(sdir.iterdir()):
                 if not sd.is_dir(): continue
                 try: net, sta = sd.name.split(".")
                 except ValueError: continue
@@ -191,10 +178,15 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str) -> pd.DataFrame:
                     d["t"] = pd.to_datetime(d.time, utc=True, format="ISO8601")
                     d = d[(d.t >= start_pd) & (d.t < end_pd)]
                     d["phase"] = d.phase.str.upper().str[0]
-                    d = d[d.phase.isin(["P", "S"])]
+                    d = d[d.phase.isin(want)]
+                    if prob_min > 0:
+                        d = d[d.prob >= prob_min]
                     if d.empty: continue
                     d["station"] = f"{net}.{sta}"
                     rows.append(d[["station", "t", "phase", "prob"]])
+            got = sum(len(r) for r in rows) - n_before
+            print(f"  pick source catalogs/{subdir} ({'+'.join(want)}): {got:,} picks",
+                  flush=True)
     if picker_pool == "with_manual":
         # Add manual mag07 picks
         m = pd.read_csv(REPO / "catalogs" / "manual_picks.csv", parse_dates=["pick_time"])
@@ -242,6 +234,13 @@ def main():
     ap.add_argument("--edt-std", type=float, default=DEFAULTS["edt_pick_std"])
     ap.add_argument("--z-max-km", type=float, default=DEFAULTS["z_max_km"])
     ap.add_argument("--n-threads", type=int, default=DEFAULTS["n_threads"])
+    ap.add_argument("--pick-sources", default="picks:P,picks_obst_01:PS",
+                    help="comma-separated catalogs/<subdir>:<phases> specs deciding which "
+                         "picker output feeds association. Default reproduces the published "
+                         "catalogue (PhaseNet instance P + OBSTransformer P/S). Benchmarked "
+                         "best pool: 'picks_pn_diting:PS,picks_pnlight_obs:PS'")
+    ap.add_argument("--pick-prob-min", type=float, default=0.0,
+                    help="drop picks below this probability before association (0 = keep all)")
     ap.add_argument("--margin-seconds", type=float, default=0.0,
                     help="when chunking, expand the pick-load window by this many "
                          "seconds on each side so events near the boundary still "
@@ -277,7 +276,16 @@ def main():
 
     _t = _time.time()
     _log("Loading picks ...")
-    picks = load_picks_for_pyocto(load_start, load_end, args.label)
+    _sources = []
+    for spec in args.pick_sources.split(","):
+        spec = spec.strip()
+        if not spec: continue
+        subdir, _, phases = spec.partition(":")
+        _sources.append((subdir, phases or "PS"))
+    assert_nanosecond_sanity()
+    picks = load_picks_for_pyocto(load_start, load_end, args.label,
+                                  sources=tuple(_sources),
+                                  prob_min=args.pick_prob_min)
     _log(f"  total picks: {len(picks):,}  "
          f"({(picks.phase=='P').sum():,} P + {(picks.phase=='S').sum():,} S)  "
          f"({_time.time()-_t:.1f}s)")
@@ -342,7 +350,7 @@ def main():
          f"mean={stations.z.mean():.2f}  ({_time.time()-_t:.1f}s)")
 
     picks_in = picks.rename(columns={"t": "time"}).copy()
-    picks_in["time"] = picks_in["time"].astype("int64") / 1e9
+    picks_in["time"] = epoch_seconds(picks_in["time"])
     _log(f"Running association on {len(picks_in):,} picks (this is the long call) ...")
     _t = _time.time()
     try:

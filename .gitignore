@@ -78,3 +78,6 @@ catalogs/hybrid_*.csv
 # Per-event refinement figures (regenerable via scripts/42, 44)
 notes/figures/associations/
 
+
+# NLLoc run tree (16 GB of per-event .obs/.hyp; regenerable via scripts/28-31)
+nlloc/

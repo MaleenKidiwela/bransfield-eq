@@ -44,12 +44,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--p-thresh", type=float, default=0.2)
     p.add_argument("--s-thresh", type=float, default=0.2)
     p.add_argument("--model", default="PhaseNet",
-                   choices=["PhaseNet", "EQTransformer", "OBSTransformer"],
-                   help="SeisBench picking model class")
+                   help="any SeisBench picking model class, e.g. PhaseNet, "
+                        "EQTransformer, OBSTransformer, PhaseNetLight, GPD, "
+                        "BasicPhaseAE, DKPN, EQCCTP, EQCCTS, Skynet")
     p.add_argument("--out-subdir", default="picks",
                    help="catalogs/<out-subdir>/ — separate models to compare")
     p.add_argument("--target-rate", type=float, default=100.0,
                    help="Resample to this rate before picking (PhaseNet default 100 Hz)")
+    p.add_argument("--picking-channels", default=None,
+                   help="override configs/targets.yaml picking_channels. "
+                        "PickBlue ('obs' weights, component_order Z12H) needs the "
+                        "hydrophone as 4th channel: append EDH,HDH,BDH,SDH")
     p.add_argument("--device", default="auto",
                    help="auto | cpu | cuda | cuda:0 | mps  "
                         "(auto picks cuda when available)")
@@ -200,6 +205,7 @@ def _pick_one_task(task: tuple) -> tuple:
 def main() -> None:
     args = parse_args()
     cfg = Config.load(args.config)
+    picking_glob = args.picking_channels or cfg.picking_channels
     if args.start:
         cfg.start = UTCDateTime(args.start)
     if args.end:
@@ -215,6 +221,7 @@ def main() -> None:
     pairs = list_station_days(cfg.start, cfg.end, args.network, args.station)
     if args.of > 1:
         pairs = [p for i, p in enumerate(pairs) if i % args.of == args.shard]
+    print(f"  picking channels: {picking_glob}", flush=True)
     print(f"Picking with {args.model} weights={args.weights} on {args.device}  "
           f"workers={args.workers} batch_size={args.batch_size}",
           flush=True)
@@ -236,7 +243,7 @@ def main() -> None:
             try:
                 df = pick_one_day(model, mseed, args.target_rate,
                                   args.p_thresh, args.s_thresh,
-                                  cfg.picking_channels,
+                                  picking_glob,
                                   batch_size=args.batch_size)
             except Exception as e:
                 n_err += 1
@@ -263,7 +270,7 @@ def main() -> None:
             initializer=_init_worker,
             initargs=(args.model, args.weights, args.device,
                       args.target_rate, args.p_thresh, args.s_thresh,
-                      cfg.picking_channels, args.batch_size,
+                      picking_glob, args.batch_size,
                       str(out_root)),
         ) as pool:
             futures = [pool.submit(_pick_one_task, t) for t in tasks]

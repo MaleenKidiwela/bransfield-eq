@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #fcfcfb; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<title>Bransfield Picker Benchmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground:        #f4f6f7;
+    --surface:       #ffffff;
+    --surface-sunk:  #eceff1;
+    --ink:           #0d1417;
+    --ink-2:         #465158;
+    --ink-3:         #6f7c84;
+    --rule:          #dbe1e4;
+    --rule-strong:   #c3ccd1;
+    --accent:        #0b6b7a;
+    --accent-soft:   #d8ebee;
+    --series-P:      #2a78d6;
+    --series-S:      #eb6834;
+    --series-3:      #1baf7a;
+    --series-4:      #eda100;
+    --series-5:      #e87ba4;
+    --series-6:      #4a3aa7;
+    --good:          #0f7a4d;
+    --warn:          #a86a00;
+    --bad:           #b03636;
+    --shadow:        0 1px 2px rgba(13,20,23,.06), 0 8px 24px -16px rgba(13,20,23,.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground:       #0e1315;
+      --surface:      #161c1f;
+      --surface-sunk: #11171a;
+      --ink:          #eef3f5;
+      --ink-2:        #a9b6bd;
+      --ink-3:        #7d8b93;
+      --rule:         #273035;
+      --rule-strong:  #38444a;
+      --accent:       #4fc3d4;
+      --accent-soft:  #123037;
+      --series-P:     #3987e5;
+      --series-S:     #d95926;
+      --series-3:     #199e70;
+      --series-4:     #c98500;
+      --series-5:     #d55181;
+      --series-6:     #9085e9;
+      --good:         #3fae7d;
+      --warn:         #d9a441;
+      --bad:          #e07575;
+      --shadow:       0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground:       #0e1315;
+    --surface:      #161c1f;
+    --surface-sunk: #11171a;
+    --ink:          #eef3f5;
+    --ink-2:        #a9b6bd;
+    --ink-3:        #7d8b93;
+    --rule:         #273035;
+    --rule-strong:  #38444a;
+    --accent:       #4fc3d4;
+    --accent-soft:  #123037;
+    --series-P:     #3987e5;
+    --series-S:     #d95926;
+    --series-3:     #199e70;
+    --series-4:     #c98500;
+    --series-5:     #d55181;
+    --series-6:     #9085e9;
+    --good:         #3fae7d;
+    --warn:         #d9a441;
+    --bad:          #e07575;
+    --shadow:       0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 0 72px; }
+  .measure { max-width: 68ch; }
+
+  h1, h2, h3, .eyebrow, .num, th, .chip, .legend, figcaption {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.12; font-weight: 700;
+       letter-spacing: -.015em; text-wrap: balance; margin: 0 0 12px; }
+  h2 { font-size: clamp(21px, 3vw, 26px); font-weight: 600; letter-spacing: -.01em;
+       text-wrap: balance; margin: 0 0 14px; }
+  h3 { font-size: 17px; font-weight: 600; margin: 0 0 8px; letter-spacing: -.005em; }
+  p  { margin: 0 0 16px; }
+  a  { color: var(--accent); }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em;
+             text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+
+  header.masthead {
+    border-bottom: 2px solid var(--ink); padding-block: 48px 24px; margin-bottom: 32px;
+  }
+  .standfirst { font-size: 19px; color: var(--ink-2); margin: 0; }
+  .byline { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+            color: var(--ink-3); margin-top: 20px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+  section { margin-block: 0 44px; }
+  .lede { font-size: 18px; }
+
+  /* ---- verdict tiles ---- */
+  .verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+              gap: 2px; background: var(--rule); border: 1px solid var(--rule);
+              border-radius: 3px; overflow: hidden; margin-block: 28px; }
+  .verdict { background: var(--surface); padding: 18px 18px 16px; }
+  .verdict .k { font-family: Archivo, sans-serif; font-size: 11px; font-weight: 600;
+                letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .verdict .v { font-family: "IBM Plex Mono", monospace; font-size: 30px; font-weight: 600;
+                line-height: 1.15; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .verdict .s { font-size: 14px; color: var(--ink-2); margin-top: 4px; line-height: 1.4; }
+
+  /* ---- figures ---- */
+  figure { margin: 0 0 12px; background: var(--surface); border: 1px solid var(--rule);
+           border-radius: 3px; padding: 20px 18px 14px; box-shadow: var(--shadow); }
+  figcaption { font-size: 13px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .chartbox { position: relative; width: 100%; }
+  .chartbox svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px;
+            color: var(--ink-2); margin-bottom: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+
+  .tip { position: absolute; pointer-events: none; opacity: 0; transition: opacity .08s;
+         background: var(--ink); color: var(--ground); font-family: "IBM Plex Mono", monospace;
+         font-size: 11.5px; line-height: 1.45; padding: 7px 9px; border-radius: 3px;
+         white-space: nowrap; z-index: 5; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+         font-variant-numeric: tabular-nums; }
+  .tip b { font-weight: 600; }
+
+  /* ---- tables ---- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px;
+               background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-family: "IBM Plex Mono", monospace;
+          font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th { text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+       text-transform: uppercase; color: var(--ink-3); padding: 10px 12px;
+       border-bottom: 1px solid var(--rule-strong); white-space: nowrap; position: sticky; top: 0;
+       background: var(--surface); }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: var(--surface-sunk); }
+  td.name { font-family: Archivo, sans-serif; font-size: 13px; font-weight: 500; }
+  .chip { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+          text-transform: uppercase; padding: 2px 6px; border-radius: 2px;
+          border: 1px solid currentColor; }
+  .chip.obs { color: var(--good); }
+  .chip.land { color: var(--ink-3); }
+  .chip.ft { color: var(--warn); }
+  .chip.cls { color: var(--ink-3); }
+  .best { color: var(--good); font-weight: 600; }
+
+  ul.notes { margin: 0 0 16px; padding-left: 20px; }
+  ul.notes li { margin-bottom: 9px; }
+  ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0;
+             display: grid; gap: 2px; background: var(--rule);
+             border: 1px solid var(--rule); border-radius: 3px; }
+  ol.steps li { counter-increment: step; background: var(--surface);
+                padding: 16px 18px 14px 56px; position: relative; }
+  ol.steps li::before { content: counter(step); position: absolute; left: 18px; top: 15px;
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 600;
+    color: var(--accent); }
+  ol.steps .t { font-family: Archivo, sans-serif; font-weight: 600; font-size: 15px;
+                display: block; margin-bottom: 3px; }
+  ol.steps .d { font-size: 15px; color: var(--ink-2); line-height: 1.5; }
+  tr.pick td { background: var(--accent-soft); }
+  tr.pick td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  code { font-family: "IBM Plex Mono", monospace; font-size: .88em;
+         background: var(--surface-sunk); padding: 1px 5px; border-radius: 2px; }
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft);
+             padding: 14px 18px; border-radius: 0 3px 3px 0; margin-block: 20px; }
+  .callout p:last-child { margin-bottom: 0; }
+  footer { border-top: 1px solid var(--rule); padding-top: 20px; font-size: 13px;
+           color: var(--ink-3); font-family: "IBM Plex Mono", monospace; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow" id="eyebrow">BRAVOSEIS · ZX ocean-bottom array</p>
+    <h1>Which picker hears the Bransfield?</h1>
+    <p class="standfirst measure" id="standfirst"></p>
+    <div class="byline" id="byline"></div>
+  </header>
+
+  <section>
+    <div class="verdicts" id="verdicts"></div>
+    <div class="measure" id="summary"></div>
+  </section>
+
+  <section>
+    <h2>Recall against the analyst catalogue</h2>
+    <p class="measure">Every picker ran at the same probability floor of 0.1, so the
+    comparison is like-for-like. A pick counts as recovered when it lands within
+    <b>0.5 s</b> of an analyst P or <b>1.0 s</b> of an analyst S, on the same station.</p>
+    <figure>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--series-P)"></i>P recall</span>
+        <span><i class="swatch" style="background:var(--series-S)"></i>S recall</span>
+      </div>
+      <div class="chartbox" id="fig-recall"><div class="tip"></div></div>
+      <figcaption id="cap-recall"></figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Recall against pick volume</h2>
+    <p class="measure">Recall alone rewards a picker for firing constantly. This is the
+    honest trade: how many picks per station-day each model emits to buy the recall it
+    gets. Down and to the right is expensive; up and to the left is cheap. Each point on
+    a line is one probability threshold, from 0.9 at the left to 0.1 at the right.</p>
+    <figure>
+      <div class="legend" id="legend-tradeoff"></div>
+      <div class="chartbox" id="fig-tradeoff"><div class="tip"></div></div>
+      <figcaption id="cap-tradeoff"></figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Timing accuracy</h2>
+    <p class="measure">Recall says a pick was found; this says whether it was found in the
+    right place. Bars show the median signed residual (picker minus analyst) with the
+    median absolute deviation as the whisker. A systematic offset propagates straight into
+    S–P times, and from there into depth.</p>
+    <figure>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--series-P)"></i>P residual</span>
+        <span><i class="swatch" style="background:var(--series-S)"></i>S residual</span>
+      </div>
+      <div class="chartbox" id="fig-bias"><div class="tip"></div></div>
+      <figcaption id="cap-bias"></figcaption>
+    </figure>
+  </section>
+
+  <section id="sec-period">
+    <h2>The reference itself improves</h2>
+    <p class="measure" id="period-intro"></p>
+    <figure>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--series-3)"></i>Early set (Jan–Aug 2019)</span>
+        <span><i class="swatch" style="background:var(--series-6)"></i>Late set (Oct 2019–Feb 2020)</span>
+      </div>
+      <div class="chartbox" id="fig-period"><div class="tip"></div></div>
+      <figcaption id="cap-period"></figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Full results</h2>
+    <p class="measure">All pickers at threshold 0.1. <code>picks/sta-day</code> is the raw
+    detection volume before association — the cost side of the recall.</p>
+    <div class="tablewrap">
+      <table id="results-table">
+        <thead><tr>
+          <th>Picker</th><th>Training</th><th>P recall</th><th>S recall</th>
+          <th>P bias</th><th>P MAD</th><th>S bias</th><th>S MAD</th><th>picks/sta-day</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What to actually run</h2>
+    <p class="measure">A single model is not the deliverable — the pipeline already pools two
+    (P from one picker, S from another), and the models fail on different arrivals, so a pool
+    recovers more than the sum of its parts. Every row below is scored the same way as the
+    table above; <code>picks/sta-day</code> is the combined detection volume the associator
+    would have to sort through.</p>
+    <div class="tablewrap">
+      <table id="pools-table">
+        <thead><tr>
+          <th>Pool</th><th>P recall</th><th>S recall</th><th>picks/sta-day</th><th>models</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="callout" id="recommendation"></div>
+  </section>
+
+  <section>
+    <h2>Recommended next steps</h2>
+    <ol class="steps" id="next-steps"></ol>
+  </section>
+
+  <section>
+    <h2>How this was run</h2>
+    <div class="measure" id="method"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const DATA = {"pickers": [{"label": "PickBlue PhaseNetLight", "family": "PhaseNetLight", "domain": "OBS", "P_recall": 0.732200647249191, "S_recall": 0.932419196865818, "P_n": 1236, "S_n": 2042, "P_bias_ms": 3.2, "P_mad_ms": 48.9, "S_bias_ms": 21.399, "S_mad_ms": 58.899, "rate": 2068.61}, {"label": "OBSTransformer obst2024", "family": "OBSTransformer", "domain": "OBS", "P_recall": 0.7338187702265372, "S_recall": 0.92409402546523, "P_n": 1236, "S_n": 2042, "P_bias_ms": 10.867, "P_mad_ms": 39.6, "S_bias_ms": 70.16699999999999, "S_mad_ms": 43.19999999999999, "rate": 1714.025}, {"label": "PhaseNet diting", "family": "PhaseNet", "domain": "land", "P_recall": 0.8058252427184466, "S_recall": 0.8457394711067581, "P_n": 1236, "S_n": 2042, "P_bias_ms": -9.601, "P_mad_ms": 24.734, "S_bias_ms": 23.2, "S_mad_ms": 47.2, "rate": 947.09}, {"label": "PickBlue PhaseNet", "family": "PhaseNet", "domain": "OBS", "P_recall": 0.6585760517799353, "S_recall": 0.7502448579823702, "P_n": 1236, "S_n": 2042, "P_bias_ms": -0.7505000000000001, "P_mad_ms": 31.849500000000003, "S_bias_ms": 41.198, "S_mad_ms": 50.950500000000005, "rate": 1185.795}, {"label": "STA/LTA classical", "family": "STA/LTA", "domain": "classical", "P_recall": 0.6019417475728155, "S_recall": 0.7987267384916749, "P_n": 1236, "S_n": 2042, "P_bias_ms": 60.4005, "P_mad_ms": 36.499500000000005, "S_bias_ms": 90.4, "S_mad_ms": 121.699, "rate": 2567.215}, {"label": "PickBlue EQTransformer", "family": "EQTransformer", "domain": "OBS", "P_recall": 0.5768608414239482, "S_recall": 0.8129285014691479, "P_n": 1236, "S_n": 2042, "P_bias_ms": -29.199, "P_mad_ms": 49.497, "S_bias_ms": 58.1, "S_mad_ms": 74.34850000000002, "rate": 1003.515}, {"label": "PhaseNet stead", "family": "PhaseNet", "domain": "land", "P_recall": 0.5938511326860841, "S_recall": 0.6356513222331048, "P_n": 1236, "S_n": 2042, "P_bias_ms": 6.8665, "P_mad_ms": 24.8995, "S_bias_ms": 61.7005, "S_mad_ms": 52.3325, "rate": 197.715}, {"label": "EQCCT", "family": "EQCCT", "domain": "land", "P_recall": 0.4749190938511327, "S_recall": 0.578354554358472, "P_n": 1236, "S_n": 2042, "P_bias_ms": 27.567, "P_mad_ms": 39.899, "S_bias_ms": 80.4, "S_mad_ms": 61.032, "rate": 226.48}, {"label": "PhaseNet instance", "family": "PhaseNet", "domain": "land", "P_recall": 0.5153721682847896, "S_recall": 0.5215475024485798, "P_n": 1236, "S_n": 2042, "P_bias_ms": -9.702, "P_mad_ms": 37.998, "S_bias_ms": 17.567, "S_mad_ms": 59.5, "rate": 210.11}, {"label": "EQTransformer instance", "family": "EQTransformer", "domain": "land", "P_recall": 0.5072815533980582, "S_recall": 0.4779627815866797, "P_n": 1236, "S_n": 2042, "P_bias_ms": 20.566000000000003, "P_mad_ms": 49.60099999999999, "S_bias_ms": 88.217, "S_mad_ms": 70.6, "rate": 272.08}, {"label": "PhaseNet Bransfield finetune", "family": "PhaseNet", "domain": "fine-tuned", "P_recall": 0.5671521035598706, "S_recall": 0.3927522037218413, "P_n": 1236, "S_n": 2042, "P_bias_ms": -7.701, "P_mad_ms": 40.001000000000005, "S_bias_ms": 10.366, "S_mad_ms": 56.316, "rate": 298.61}, {"label": "BasicPhaseAE stead", "family": "BasicPhaseAE", "domain": "land", "P_recall": 0.43042071197411, "S_recall": 0.2688540646425073, "P_n": 1236, "S_n": 2042, "P_bias_ms": -34.217, "P_mad_ms": 130.0, "S_bias_ms": -108.102, "S_mad_ms": 271.533, "rate": 3338.845}], "tradeoff": [{"label": "PickBlue PhaseNetLight", "short": "PB-PNL", "phase": "P", "token": "--series-P", "pts": [{"thr": 0.1, "recall": 0.732200647249191, "rate": 2068.61}, {"thr": 0.15, "recall": 0.6901294498381877, "rate": 1386.83}, {"thr": 0.2, "recall": 0.6561488673139159, "rate": 1010.945}, {"thr": 0.3, "recall": 0.5841423948220065, "rate": 576.735}, {"thr": 0.4, "recall": 0.5258899676375405, "rate": 335.87}, {"thr": 0.5, "recall": 0.4724919093851132, "rate": 198.33}, {"thr": 0.6, "recall": 0.4288025889967637, "rate": 117.24}, {"thr": 0.7, "recall": 0.3754045307443365, "rate": 59.605}, {"thr": 0.8, "recall": 0.2936893203883495, "rate": 22.075}, {"thr": 0.9, "recall": 0.1529126213592233, "rate": 3.29}]}, {"label": "OBSTransformer obst2024", "short": "OBST", "phase": "P", "token": "--series-S", "pts": [{"thr": 0.1, "recall": 0.7338187702265372, "rate": 1714.025}, {"thr": 0.15, "recall": 0.709546925566343, "rate": 1473.29}, {"thr": 0.2, "recall": 0.6779935275080906, "rate": 1317.12}, {"thr": 0.3, "recall": 0.6407766990291263, "rate": 1003.47}, {"thr": 0.4, "recall": 0.6197411003236246, "rate": 789.005}, {"thr": 0.5, "recall": 0.598705501618123, "rate": 593.525}, {"thr": 0.6, "recall": 0.5606796116504854, "rate": 498.51}, {"thr": 0.7, "recall": 0.5258899676375405, "rate": 373.775}, {"thr": 0.8, "recall": 0.4733009708737864, "rate": 210.92}, {"thr": 0.9, "recall": 0.3179611650485437, "rate": 40.195}]}, {"label": "PhaseNet diting", "short": "PN-diting", "phase": "P", "token": "--series-3", "pts": [{"thr": 0.1, "recall": 0.8058252427184466, "rate": 947.09}, {"thr": 0.15, "recall": 0.779126213592233, "rate": 655.39}, {"thr": 0.2, "recall": 0.7564724919093851, "rate": 484.095}, {"thr": 0.3, "recall": 0.7046925566343042, "rate": 280.97}, {"thr": 0.4, "recall": 0.6480582524271845, "rate": 161.62}, {"thr": 0.5, "recall": 0.5153721682847896, "rate": 83.07}, {"thr": 0.6, "recall": 0.3883495145631068, "rate": 47.735}, {"thr": 0.7, "recall": 0.2872168284789644, "rate": 27.36}, {"thr": 0.8, "recall": 0.1957928802588996, "rate": 13.32}, {"thr": 0.9, "recall": 0.1043689320388349, "rate": 3.605}]}, {"label": "PickBlue PhaseNet", "short": "PB-PN", "phase": "P", "token": "--series-4", "pts": [{"thr": 0.1, "recall": 0.6585760517799353, "rate": 1185.795}, {"thr": 0.15, "recall": 0.6173139158576052, "rate": 833.54}, {"thr": 0.2, "recall": 0.5768608414239482, "rate": 623.76}, {"thr": 0.3, "recall": 0.5088996763754046, "rate": 369.665}, {"thr": 0.4, "recall": 0.4546925566343042, "rate": 216.525}, {"thr": 0.5, "recall": 0.3996763754045307, "rate": 128.235}, {"thr": 0.6, "recall": 0.3478964401294498, "rate": 82.655}, {"thr": 0.7, "recall": 0.2953074433656958, "rate": 49.885}, {"thr": 0.8, "recall": 0.2241100323624595, "rate": 24.06}, {"thr": 0.9, "recall": 0.1270226537216828, "rate": 5.065}]}, {"label": "STA/LTA classical", "short": "STA/LTA", "phase": "P", "token": "--series-5", "pts": [{"thr": 0.1, "recall": 0.6019417475728155, "rate": 2567.215}, {"thr": 0.15, "recall": 0.6019417475728155, "rate": 2567.215}, {"thr": 0.2, "recall": 0.6019417475728155, "rate": 2567.215}, {"thr": 0.3, "recall": 0.6011326860841424, "rate": 1830.58}, {"thr": 0.4, "recall": 0.598705501618123, "rate": 1071.065}, {"thr": 0.5, "recall": 0.5922330097087378, "rate": 681.135}, {"thr": 0.6, "recall": 0.5768608414239482, "rate": 441.27}, {"thr": 0.7, "recall": 0.5412621359223301, "rate": 278.215}, {"thr": 0.8, "recall": 0.4870550161812297, "rate": 197.275}, {"thr": 0.9, "recall": 0.4263754045307443, "rate": 140.935}]}, {"label": "PickBlue EQTransformer", "short": "PB-EQT", "phase": "P", "token": "--series-6", "pts": [{"thr": 0.1, "recall": 0.5768608414239482, "rate": 1003.515}, {"thr": 0.15, "recall": 0.5412621359223301, "rate": 715.31}, {"thr": 0.2, "recall": 0.5056634304207119, "rate": 527.735}, {"thr": 0.3, "recall": 0.4538834951456311, "rate": 344.515}, {"thr": 0.4, "recall": 0.4182847896440129, "rate": 224.665}, {"thr": 0.5, "recall": 0.3810679611650485, "rate": 153.58}, {"thr": 0.6, "recall": 0.3470873786407767, "rate": 98.675}, {"thr": 0.7, "recall": 0.2936893203883495, "rate": 53.035}, {"thr": 0.8, "recall": 0.2338187702265372, "rate": 19.51}, {"thr": 0.9, "recall": 0.0849514563106796, "rate": 1.25}]}], "period": [{"label": "OBST", "phase": "P", "early": 0.542907180385289, "late": 0.7338187702265372}, {"label": "OBST", "phase": "S", "early": 0.876151912873499, "late": 0.92409402546523}, {"label": "PB-PN", "phase": "P", "early": 0.4177855613932671, "late": 0.6585760517799353}, {"label": "PB-PN", "phase": "S", "early": 0.6411616866796984, "late": 0.7502448579823702}, {"label": "PN-inst", "phase": "P", "early": 0.3866510994356879, "late": 0.5153721682847896}, {"label": "PN-inst", "phase": "S", "early": 0.4074280927115331, "late": 0.5215475024485798}], "pools": [{"pool": "Current production (PN-inst P + OBST P/S)", "P": 0.7783171521035599, "S": 0.92409402546523, "rate": 1924.135, "models": 2, "pick": false}, {"pool": "diting alone", "P": 0.8058252427184466, "S": 0.8457394711067581, "rate": 947.09, "models": 1, "pick": false}, {"pool": "OBST alone", "P": 0.7338187702265372, "S": 0.92409402546523, "rate": 1714.025, "models": 1, "pick": false}, {"pool": "PB-PNL alone", "P": 0.732200647249191, "S": 0.932419196865818, "rate": 2068.61, "models": 1, "pick": false}, {"pool": "PB-PN alone", "P": 0.6585760517799353, "S": 0.7502448579823702, "rate": 1185.795, "models": 1, "pick": false}, {"pool": "STA/LTA alone", "P": 0.6019417475728155, "S": 0.7987267384916749, "rate": 2567.215, "models": 1, "pick": false}, {"pool": "PN-stead alone", "P": 0.5938511326860841, "S": 0.6356513222331048, "rate": 197.715, "models": 1, "pick": false}, {"pool": "PB-EQT alone", "P": 0.5768608414239482, "S": 0.8129285014691479, "rate": 1003.515, "models": 1, "pick": false}, {"pool": "PN-ft alone", "P": 0.5671521035598706, "S": 0.3927522037218413, "rate": 298.61, "models": 1, "pick": false}, {"pool": "PN-inst alone", "P": 0.5153721682847896, "S": 0.5215475024485798, "rate": 210.11, "models": 1, "pick": false}, {"pool": "EQT-inst alone", "P": 0.5072815533980582, "S": 0.4779627815866797, "rate": 272.08, "models": 1, "pick": false}, {"pool": "BPAE alone", "P": 0.43042071197411, "S": 0.2688540646425073, "rate": 3338.845, "models": 1, "pick": false}, {"pool": "Best 2-model pool \u2014 diting+PB-PNL", "P": 0.8915857605177994, "S": 0.9598432908912832, "rate": 3015.7000000000003, "models": 2, "pick": true}, {"pool": "Best 3-model pool \u2014 OBST+diting+PB-PNL", "P": 0.9110032362459548, "S": 0.9764936336924585, "rate": 4729.725, "models": 3, "pick": false}], "copy": {"standfirst": "12 phase pickers, one ocean-bottom array, 3,278 analyst picks. Which of them actually finds the P arrivals the catalogue has been losing?", "byline": ["12 pickers scored", "1,236 P / 2,042 S analyst picks", "ZX dense array \u00b7 10 days \u00b7 Oct 2019\u2013Feb 2020", "generated 2026-09-11"], "verdicts": [{"k": "Best P recall", "v": "80.6%", "s": "PhaseNet diting"}, {"k": "Best S recall", "v": "93.2%", "s": "PickBlue PhaseNetLight"}, {"k": "Production today", "v": "73.4%", "s": "OBSTransformer \u2014 P recall, the stack in use"}, {"k": "Classical floor", "v": "60.2%", "s": "STA/LTA on 3\u201320 Hz \u2014 P recall"}], "summary": "<p class='lede'>The production catalogue takes P from PhaseNet <code>instance</code> and both phases from OBSTransformer, and loses roughly a quarter of the analyst's P picks doing it. This benchmark asks whether anything else in the SeisBench zoo does better on Bransfield ocean-bottom data \u2014 including the OBS-trained PickBlue family that was sitting unused in the model cache.</p><p>The answer is not the model anyone would have guessed. <b>PhaseNet <code>diting</code></b> \u2014 trained on a large, diverse <em>land</em> catalogue, with no ocean-bottom data and no hydrophone \u2014 recovers <b>80.6%</b> of analyst P picks, 7 points above the OBSTransformer the pipeline runs today, while emitting barely half the picks (947 against 1,714 per station-day). The OBS-specialist models do win on S \u2014 PickBlue PhaseNetLight takes that phase at 93.2% \u2014 but on P, the phase that is actually limiting this catalogue, training breadth beats training domain.</p><p>Every neural picker clears the classical STA/LTA floor (60.2% on P), but STA/LTA buys that recall with 2,567 picks per station-day \u2014 the most of anything here. Pick volume is the hidden axis of this benchmark, and it is why the second figure matters more than the first.</p>", "cap_recall": "Recall of 1,236 analyst P picks and 2,042 S picks across the ZX dense array, 10 days, every picker at probability \u2265 0.1. <b>S is close to solved by several models; P is where they separate.</b>", "cap_tradeoff": "P recall against detection volume, threshold swept 0.9 \u2192 0.1. Up and to the left is better: more real arrivals per pick emitted. <b>PhaseNet diting sits above and left of every other model</b> \u2014 it is not buying its recall with volume. BasicPhaseAE stead is the opposite corner: 3,339 picks per station-day for 43.0% P.", "cap_bias": "Median signed residual with MAD whiskers, at probability \u2265 0.1. A model can have excellent recall and still be systematically late \u2014 and because S picks set S\u2013P times, a biased S is a biased depth.", "period_intro": "On the early days OBSTransformer recovers 54.3% of analyst P picks; on the late days, 73.4% \u2014 a 19 point swing with no change to the model. The analyst catalogue was built over two years and the later picks are the more careful ones, so recall measured against the early days understates every picker. The benchmark above is therefore scored on the late days only; this figure shows what the early days would have told us instead.", "cap_period": "Same models, same code, two evaluation windows: 15 days from January\u2013August 2019 against the 10 late days from October 2019\u2013February 2020 used for the benchmark. The gap is a property of the reference, not of the pickers.", "method": "<ul class='notes'><li><b>Evaluation set.</b> The 10 days carrying the most analyst picks from October 2019 onward, on the ZX ocean-bottom array \u2014 the window where the manual catalogue is most carefully picked: 2019-10-04, 10-06, 10-08, 10-13, then 2020-01-01, 01-17, 01-19, 01-20, 01-22 and 01-25. Together they carry 3,278 analyst picks over 447 events, 29% of all late-period picks on the array.</li><li><b>Matching.</b> Greedy nearest-time match per station and phase, tolerance 0.5 s for P and 1.0 s for S. Recall is matched analyst picks over all analyst picks; a picker is never credited for a pick the analyst did not make.</li><li><b>Common floor.</b> Every model ran at P and S thresholds of 0.1 and is scored at that floor, so none is flattered by a threshold tuned on this data. The trade-off figure sweeps 0.1\u20130.9.</li><li><b>Channels.</b> The OBS-trained models (PickBlue PhaseNet, PhaseNetLight and EQTransformer, component order <code>Z12H</code>) receive the hydrophone as a fourth channel \u2014 <code>EDH</code> on the dense Orca instruments, <code>HDH</code> on the broadbands. Everything else receives the three seismometer components. Dropping the hydrophone costs PickBlue 4 points of P recall and 11 of S, so the fourth channel is doing real work.</li><li><b>Chance matching is small.</b> The busiest picker emits one pick every 26 s per station, so a 0.5 s P window has roughly a 4% chance of catching an unrelated pick. Differences of tens of points are not a coincidence artefact.</li><li><b>Not a precision measurement.</b> The analyst catalogue contains only tectonic events they chose to pick, so an unmatched pick is not necessarily false \u2014 many are icequakes, ship noise, or real events outside the catalogue. Detection volume (picks/station-day) stands in for the cost of a pick.</li><li><b>Is ten days enough?</b> Two pickers here \u2014 OBSTransformer and PhaseNet <code>instance</code> \u2014 have full-year picks, so the sample can be checked against the whole 123-day late period (11,308 analyst picks). OBSTransformer scores 73.4% P on the ten days against 74.3% on all 123; PhaseNet <code>instance</code>, 51.5% against 50.7%. Every estimate lands within 1.1 points, so the day sample is not distorting the ranking. Gaps under ~2 points are still within noise \u2014 treat OBSTransformer and PickBlue PhaseNetLight as tied on P.</li><li><b>GPD was dropped.</b> GPD <code>stead</code> runs 14\u00d7 slower per station-day than PhaseNet on CPU \u2014 about three hours for this evaluation set on a pod with no GPU \u2014 and every other land-trained model here lands well behind <code>diting</code>. It was stopped after 16 of 220 station-days rather than held the report for it.</li></ul>", "recommendation": "<p><b>Run diting+PB-PNL.</b> It recovers <b>89.2%</b> of analyst P picks against the current pipeline's 77.8% \u2014 11.3 points \u2014 and 96.0% of S against 92.4%. The cost is 1.6\u00d7 the detection volume (3,016 against 1,924 picks per station-day), and that volume is the associator's problem, not the picker's \u2014 which is why step 3 below exists.</p>", "next_steps": [{"t": "Fix the pandas-3 unit bugs first", "d": "The pod image moved to pandas 3.0.3 on 29 June, where <code>to_datetime</code> returns microsecond dtype. <code>17_pyocto_associate.py:345</code> converts pick times with <code>.astype('int64') / 1e9</code>, which is now 1000\u00d7 wrong and silent \u2014 a year of picks collapses into nine hours. The same pattern sits in <code>05_validate_picks.py</code>, <code>16_stalta_on_dd.py</code>, <code>45_compute_station_corrections.py</code> and <code>manual_picks.py:298</code>. Nothing downstream can be trusted until these are fixed and pandas is pinned in <code>requirements.txt</code>."}, {"t": "Re-pick the full year with the winning pool", "d": "Roughly 16,000 station-days per model. On this CPU-only pod that is about six hours per PhaseNet-class model at eight workers; on a GPU pod it is well under an hour. Worth restarting the pod with a GPU profile before committing."}, {"t": "Validate through association before trusting the gain", "d": "Higher pick recall is not automatically a better catalogue. Run pyocto on one test month with the new pool and compare event count, pick-per-event distribution, post-fit RMS and NLLoc \u03c3 against the current catalogue. If the extra picks are noise, the associator will show it as more low-quality events rather than better ones."}, {"t": "Correct the S timing bias you keep", "d": "OBSTransformer's S picks run systematically late, and every production S pick comes from it, so the whole catalogue carries that offset into S\u2013P times and therefore into depth. Either switch the S source or apply a flat correction measured per station."}, {"t": "Fine-tune the winner on the analyst catalogue", "d": "Every model here is off-the-shelf except the existing Bransfield fine-tune, which was built on PhaseNet <code>instance</code> \u2014 the weakest base in this benchmark. Re-running <code>06</code>\u2013<code>09</code> from the strongest base is the obvious next gain, and the analyst catalogue's late period is the training set to use."}, {"t": "Rebuild the downstream stack", "d": "A changed pick pool invalidates the pyocto catalogue and everything derived from it \u2014 NLLoc absolutes, the refined-pick relocations, GrowClust and hypoDD. Sequence the rebuild rather than patching catalogues in place."}], "footer": "Bransfield Strait BRAVOSEIS \u00b7 ZX ocean-bottom array \u00b7 generated 2026-09-11 21:39 UTC from <code>benchmark_metrics.csv</code>"}};
+
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const SVGNS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const fmtPct = v => (v * 100).toFixed(1) + "%";
+const fmtMs  = v => (v >= 0 ? "+" : "") + Math.round(v) + " ms";
+
+function tipFor(box) {
+  const t = box.querySelector(".tip");
+  return {
+    show(html, x, y) {
+      t.innerHTML = html; t.style.opacity = 1;
+      const bw = box.clientWidth, tw = t.offsetWidth;
+      t.style.left = Math.max(0, Math.min(x - tw / 2, bw - tw)) + "px";
+      t.style.top = (y - t.offsetHeight - 10) + "px";
+    },
+    hide() { t.style.opacity = 0; }
+  };
+}
+
+/* ---------------- figure 1: grouped recall bars ---------------- */
+function drawRecall() {
+  const box = document.getElementById("fig-recall");
+  const tip = tipFor(box);
+  const rows = DATA.pickers.slice().sort((a, b) => b.P_recall - a.P_recall);
+  const W = box.clientWidth || 720;
+  const padL = Math.min(210, Math.max(140, W * 0.28)), padR = 54, padT = 8, padB = 30;
+  const rowH = 34, barH = 11, gap = 3;
+  const H = padT + rows.length * rowH + padB;
+  const plotW = W - padL - padR;
+  const x = v => padL + v * plotW;
+
+  box.querySelectorAll("svg").forEach(s => s.remove());
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+                          "aria-label": "P and S recall by picker" });
+
+  for (let g = 0; g <= 100; g += 20) {
+    svg.appendChild(el("line", { x1: x(g / 100), x2: x(g / 100), y1: padT, y2: padT + rows.length * rowH,
+      stroke: css("--rule"), "stroke-width": 1 }));
+    const tx = el("text", { x: x(g / 100), y: H - 10, "text-anchor": "middle",
+      fill: css("--ink-3"), "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+    tx.textContent = g + "%"; svg.appendChild(tx);
+  }
+
+  rows.forEach((r, i) => {
+    const yTop = padT + i * rowH;
+    const lbl = el("text", { x: padL - 12, y: yTop + rowH / 2 + 4, "text-anchor": "end",
+      fill: css("--ink"), "font-size": 12.5, "font-family": "Archivo, sans-serif" });
+    lbl.textContent = r.label.length > 26 ? r.label.slice(0, 25) + "…" : r.label;
+    const ttl = el("title"); ttl.textContent = r.label; lbl.appendChild(ttl);
+    svg.appendChild(lbl);
+
+    [["P", r.P_recall, "--series-P"], ["S", r.S_recall, "--series-S"]].forEach(([ph, v, tok], k) => {
+      const y = yTop + rowH / 2 - barH - gap / 2 + k * (barH + gap);
+      const w = Math.max(1.5, v * plotW);
+      svg.appendChild(el("rect", { x: padL, y, width: w, height: barH, rx: 3,
+        fill: css(tok) }));
+      const hit = el("rect", { x: padL, y: y - 1, width: Math.max(w, 6), height: barH + 2,
+        fill: "transparent", style: "cursor:crosshair" });
+      hit.addEventListener("mousemove", ev => {
+        const b = box.getBoundingClientRect();
+        tip.show(`<b>${r.label}</b><br>${ph} recall ${fmtPct(v)}<br>${r[ph + "_n"]} analyst picks`,
+          ev.clientX - b.left, ev.clientY - b.top);
+      });
+      hit.addEventListener("mouseleave", tip.hide);
+      svg.appendChild(hit);
+      const t = el("text", { x: padL + w + 7, y: y + barH - 1.5, fill: css("--ink-2"),
+        "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+      t.textContent = fmtPct(v); svg.appendChild(t);
+    });
+  });
+  box.appendChild(svg);
+}
+
+/* ---------------- figure 2: recall vs pick volume ---------------- */
+function drawTradeoff() {
+  const box = document.getElementById("fig-tradeoff");
+  const tip = tipFor(box);
+  const series = DATA.tradeoff;
+  const W = box.clientWidth || 720;
+  const padL = 52, padR = 18, padT = 12, padB = 46;
+  const H = Math.max(300, Math.min(400, W * 0.52));
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxX = Math.max(...series.flatMap(s => s.pts.map(p => p.rate))) * 1.05;
+  const x = v => padL + (v / maxX) * plotW;
+  const y = v => padT + (1 - v) * plotH;
+
+  box.querySelectorAll("svg").forEach(s => s.remove());
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+                          "aria-label": "Recall versus picks per station-day" });
+
+  for (let g = 0; g <= 100; g += 25) {
+    svg.appendChild(el("line", { x1: padL, x2: padL + plotW, y1: y(g / 100), y2: y(g / 100),
+      stroke: css("--rule"), "stroke-width": 1 }));
+    const t = el("text", { x: padL - 9, y: y(g / 100) + 4, "text-anchor": "end",
+      fill: css("--ink-3"), "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+    t.textContent = g + "%"; svg.appendChild(t);
+  }
+  const nx = 4;
+  for (let i = 0; i <= nx; i++) {
+    const v = (maxX / nx) * i;
+    const t = el("text", { x: x(v), y: H - 24, "text-anchor": "middle", fill: css("--ink-3"),
+      "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+    t.textContent = Math.round(v).toLocaleString(); svg.appendChild(t);
+  }
+  const ax = el("text", { x: padL + plotW / 2, y: H - 6, "text-anchor": "middle",
+    fill: css("--ink-2"), "font-size": 11.5, "font-family": "Archivo, sans-serif" });
+  ax.textContent = "picks per station-day"; svg.appendChild(ax);
+
+  series.forEach(s => {
+    const col = css(s.token);
+    const pts = s.pts.slice().sort((a, b) => a.rate - b.rate);
+    const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.rate).toFixed(1)},${y(p.recall).toFixed(1)}`).join(" ");
+    svg.appendChild(el("path", { d, fill: "none", stroke: col, "stroke-width": 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    pts.forEach(p => {
+      svg.appendChild(el("circle", { cx: x(p.rate), cy: y(p.recall), r: 3.2, fill: col,
+        stroke: css("--surface"), "stroke-width": 2 }));
+      const hit = el("circle", { cx: x(p.rate), cy: y(p.recall), r: 11, fill: "transparent",
+        style: "cursor:crosshair" });
+      hit.addEventListener("mousemove", ev => {
+        const b = box.getBoundingClientRect();
+        tip.show(`<b>${s.label}</b><br>thr ${p.thr} · ${fmtPct(p.recall)} ${s.phase}<br>` +
+                 `${Math.round(p.rate).toLocaleString()} picks/sta-day`,
+          ev.clientX - b.left, ev.clientY - b.top);
+      });
+      hit.addEventListener("mouseleave", tip.hide);
+      svg.appendChild(hit);
+    });
+    const last = pts[pts.length - 1];
+    const t = el("text", { x: x(last.rate) + 8, y: y(last.recall) + 4, fill: col,
+      "font-size": 11, "font-weight": 600, "font-family": "Archivo, sans-serif" });
+    t.textContent = s.short; svg.appendChild(t);
+  });
+  box.appendChild(svg);
+
+  const lg = document.getElementById("legend-tradeoff");
+  lg.innerHTML = series.map(s =>
+    `<span><i class="swatch" style="background:${css(s.token)}"></i>${s.label} · ${s.phase}</span>`).join("");
+}
+
+/* ---------------- figure 3: timing bias ---------------- */
+function drawBias() {
+  const box = document.getElementById("fig-bias");
+  const tip = tipFor(box);
+  const rows = DATA.pickers.filter(r => r.P_bias_ms !== null || r.S_bias_ms !== null);
+  const W = box.clientWidth || 720;
+  const padL = Math.min(210, Math.max(140, W * 0.28)), padR = 24, padT = 22, padB = 34;
+  const rowH = 30;
+  const H = padT + rows.length * rowH + padB;
+  const plotW = W - padL - padR;
+  const lim = Math.max(120, ...rows.flatMap(r =>
+    [r.P_bias_ms, r.S_bias_ms, r.P_mad_ms, r.S_mad_ms].filter(v => v !== null).map(Math.abs))) * 1.1;
+  const x = v => padL + ((v + lim) / (2 * lim)) * plotW;
+
+  box.querySelectorAll("svg").forEach(s => s.remove());
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+                          "aria-label": "Median timing residual by picker" });
+
+  [-lim, -lim / 2, 0, lim / 2, lim].forEach(v => {
+    const isZero = Math.abs(v) < 1e-6;
+    svg.appendChild(el("line", { x1: x(v), x2: x(v), y1: padT - 6, y2: padT + rows.length * rowH,
+      stroke: isZero ? css("--rule-strong") : css("--rule"), "stroke-width": isZero ? 1.5 : 1 }));
+    const t = el("text", { x: x(v), y: H - 12, "text-anchor": "middle", fill: css("--ink-3"),
+      "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+    t.textContent = Math.round(v) + (isZero ? " ms" : ""); svg.appendChild(t);
+  });
+  const zl = el("text", { x: x(0), y: padT - 11, "text-anchor": "middle", fill: css("--ink-3"),
+    "font-size": 10.5, "font-family": "Archivo, sans-serif" });
+  zl.textContent = "analyst pick"; svg.appendChild(zl);
+
+  rows.forEach((r, i) => {
+    const yTop = padT + i * rowH;
+    const lbl = el("text", { x: padL - 12, y: yTop + rowH / 2 + 4, "text-anchor": "end",
+      fill: css("--ink"), "font-size": 12.5, "font-family": "Archivo, sans-serif" });
+    lbl.textContent = r.label.length > 26 ? r.label.slice(0, 25) + "…" : r.label;
+    svg.appendChild(lbl);
+    [["P", r.P_bias_ms, r.P_mad_ms, "--series-P"], ["S", r.S_bias_ms, r.S_mad_ms, "--series-S"]]
+      .forEach(([ph, b, mad, tok], k) => {
+        if (b === null) return;
+        const cy = yTop + rowH / 2 - 5 + k * 10;
+        const col = css(tok);
+        svg.appendChild(el("line", { x1: x(b - mad), x2: x(b + mad), y1: cy, y2: cy,
+          stroke: col, "stroke-width": 1.5, opacity: .45, "stroke-linecap": "round" }));
+        svg.appendChild(el("circle", { cx: x(b), cy, r: 4, fill: col,
+          stroke: css("--surface"), "stroke-width": 1.5 }));
+        const hit = el("circle", { cx: x(b), cy, r: 11, fill: "transparent", style: "cursor:crosshair" });
+        hit.addEventListener("mousemove", ev => {
+          const bb = box.getBoundingClientRect();
+          tip.show(`<b>${r.label}</b><br>${ph} median ${fmtMs(b)}<br>MAD ${Math.round(mad)} ms`,
+            ev.clientX - bb.left, ev.clientY - bb.top);
+        });
+        hit.addEventListener("mouseleave", tip.hide);
+        svg.appendChild(hit);
+      });
+  });
+  box.appendChild(svg);
+}
+
+/* ---------------- figure 4: early vs late ---------------- */
+function drawPeriod() {
+  const box = document.getElementById("fig-period");
+  if (!DATA.period || !DATA.period.length) {
+    document.getElementById("sec-period").style.display = "none"; return;
+  }
+  const tip = tipFor(box);
+  const W = box.clientWidth || 720;
+  const groups = DATA.period;
+  const padL = 46, padR = 16, padT = 14, padB = 62;
+  const H = Math.max(260, Math.min(340, W * 0.42));
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const gw = plotW / groups.length;
+  const y = v => padT + (1 - v) * plotH;
+
+  box.querySelectorAll("svg").forEach(s => s.remove());
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+                          "aria-label": "Recall on early versus late evaluation days" });
+  for (let g = 0; g <= 100; g += 25) {
+    svg.appendChild(el("line", { x1: padL, x2: padL + plotW, y1: y(g / 100), y2: y(g / 100),
+      stroke: css("--rule"), "stroke-width": 1 }));
+    const t = el("text", { x: padL - 9, y: y(g / 100) + 4, "text-anchor": "end", fill: css("--ink-3"),
+      "font-size": 11, "font-family": "IBM Plex Mono, monospace" });
+    t.textContent = g + "%"; svg.appendChild(t);
+  }
+  groups.forEach((grp, gi) => {
+    const x0 = padL + gi * gw;
+    const bars = [["early", grp.early, "--series-3"], ["late", grp.late, "--series-6"]];
+    const bw = Math.min(34, (gw - 26) / 2);
+    bars.forEach(([k, v, tok], bi) => {
+      if (v === null) return;
+      const bx = x0 + gw / 2 - bw - 1 + bi * (bw + 2);
+      const col = css(tok);
+      svg.appendChild(el("rect", { x: bx, y: y(v), width: bw, height: Math.max(1, plotH - (y(v) - padT)),
+        rx: 3, fill: col }));
+      const hit = el("rect", { x: bx, y: padT, width: bw, height: plotH, fill: "transparent",
+        style: "cursor:crosshair" });
+      hit.addEventListener("mousemove", ev => {
+        const b = box.getBoundingClientRect();
+        tip.show(`<b>${grp.label}</b><br>${grp.phase} recall, ${k} set<br>${fmtPct(v)}`,
+          ev.clientX - b.left, ev.clientY - b.top);
+      });
+      hit.addEventListener("mouseleave", tip.hide);
+      svg.appendChild(hit);
+      const t = el("text", { x: bx + bw / 2, y: y(v) - 6, "text-anchor": "middle",
+        fill: css("--ink-2"), "font-size": 10.5, "font-family": "IBM Plex Mono, monospace" });
+      t.textContent = Math.round(v * 100) + "%"; svg.appendChild(t);
+    });
+    const words = grp.label.split(" ");
+    words.forEach((w, wi) => {
+      const t = el("text", { x: x0 + gw / 2, y: padT + plotH + 18 + wi * 13, "text-anchor": "middle",
+        fill: css("--ink-2"), "font-size": 11, "font-family": "Archivo, sans-serif" });
+      t.textContent = w; svg.appendChild(t);
+    });
+    const ph = el("text", { x: x0 + gw / 2, y: padT + plotH + 18 + words.length * 13,
+      "text-anchor": "middle", fill: css("--ink-3"), "font-size": 10.5,
+      "font-family": "IBM Plex Mono, monospace" });
+    ph.textContent = grp.phase; svg.appendChild(ph);
+  });
+  box.appendChild(svg);
+}
+
+/* ---------------- prose + table ---------------- */
+function fillText() {
+  document.getElementById("standfirst").textContent = DATA.copy.standfirst;
+  document.getElementById("byline").innerHTML = DATA.copy.byline
+    .map(b => `<span>${b}</span>`).join("");
+  document.getElementById("verdicts").innerHTML = DATA.copy.verdicts.map(v =>
+    `<div class="verdict"><div class="k">${v.k}</div><div class="v">${v.v}</div>
+     <div class="s">${v.s}</div></div>`).join("");
+  document.getElementById("summary").innerHTML = DATA.copy.summary;
+  document.getElementById("cap-recall").innerHTML = DATA.copy.cap_recall;
+  document.getElementById("cap-tradeoff").innerHTML = DATA.copy.cap_tradeoff;
+  document.getElementById("cap-bias").innerHTML = DATA.copy.cap_bias;
+  document.getElementById("period-intro").innerHTML = DATA.copy.period_intro;
+  document.getElementById("cap-period").innerHTML = DATA.copy.cap_period;
+  document.getElementById("method").innerHTML = DATA.copy.method;
+  document.getElementById("footer").innerHTML = DATA.copy.footer;
+
+  document.getElementById("recommendation").innerHTML = DATA.copy.recommendation;
+  document.getElementById("next-steps").innerHTML = DATA.copy.next_steps
+    .map(s => `<li><span class="t">${s.t}</span><span class="d">${s.d}</span></li>`).join("");
+  document.querySelector("#pools-table tbody").innerHTML = DATA.pools.map(p => `<tr${
+      p.pick ? ' class="pick"' : ""}>
+      <td class="name">${p.pool}${p.pick ? " ★" : ""}</td>
+      <td>${fmtPct(p.P)}</td><td>${fmtPct(p.S)}</td>
+      <td>${Math.round(p.rate).toLocaleString()}</td><td>${p.models}</td></tr>`).join("");
+
+  const chipCls = { OBS: "obs", land: "land", "fine-tuned": "ft", classical: "cls" };
+  const bestP = Math.max(...DATA.pickers.map(r => r.P_recall));
+  const bestS = Math.max(...DATA.pickers.map(r => r.S_recall));
+  document.querySelector("#results-table tbody").innerHTML = DATA.pickers
+    .slice().sort((a, b) => (b.P_recall + b.S_recall) - (a.P_recall + a.S_recall))
+    .map(r => `<tr>
+      <td class="name">${r.label}</td>
+      <td><span class="chip ${chipCls[r.domain] || "land"}">${r.domain}</span></td>
+      <td class="${r.P_recall === bestP ? "best" : ""}">${fmtPct(r.P_recall)}</td>
+      <td class="${r.S_recall === bestS ? "best" : ""}">${fmtPct(r.S_recall)}</td>
+      <td>${r.P_bias_ms === null ? "—" : fmtMs(r.P_bias_ms)}</td>
+      <td>${r.P_mad_ms === null ? "—" : Math.round(r.P_mad_ms) + " ms"}</td>
+      <td>${r.S_bias_ms === null ? "—" : fmtMs(r.S_bias_ms)}</td>
+      <td>${r.S_mad_ms === null ? "—" : Math.round(r.S_mad_ms) + " ms"}</td>
+      <td>${Math.round(r.rate).toLocaleString()}</td></tr>`).join("");
+}
+
+function drawAll() { drawRecall(); drawTradeoff(); drawBias(); drawPeriod(); }
+fillText();
+drawAll();
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+new MutationObserver(drawAll).observe(document.documentElement,
+  { attributes: true, attributeFilter: ["data-theme"] });
+</script>
+
+</body>
+</html>
