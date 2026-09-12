@@ -44,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from bransfield_eq import geo  # noqa: E402
 from bransfield_eq.timeutil import epoch_seconds, assert_nanosecond_sanity  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -234,6 +235,14 @@ def main():
     ap.add_argument("--edt-std", type=float, default=DEFAULTS["edt_pick_std"])
     ap.add_argument("--z-max-km", type=float, default=DEFAULTS["z_max_km"])
     ap.add_argument("--n-threads", type=int, default=DEFAULTS["n_threads"])
+    ap.add_argument("--exclude-stations", default="",
+                    help="comma-separated NET.STA to drop before association, e.g. "
+                         "'5M.DCP,5M.LVN'. Filters existing picks; never requires re-picking.")
+    ap.add_argument("--legacy-origin", action="store_true",
+                    help="derive the map origin from the mean position of stations that "
+                         "have picks, as before 2026-09-12. Reproduces older runs. NOT safe "
+                         "for chunked runs: the origin moves with station availability, so "
+                         "chunks land on different coordinate frames.")
     ap.add_argument("--pick-sources", default="picks:P,picks_obst_01:PS",
                     help="comma-separated catalogs/<subdir>:<phases> specs deciding which "
                          "picker output feeds association. Default reproduces the published "
@@ -294,26 +303,53 @@ def main():
     _log(f"  pick time range: {picks.t.min()} -> {picks.t.max()}")
     _log(f"  stations represented: {picks.station.nunique()}")
 
+    excl = {x.strip() for x in args.exclude_stations.split(",") if x.strip()}
+    if excl:
+        known = set(picks.station.unique())
+        missing = excl - known
+        if missing:
+            _log(f"  [warn] --exclude-stations lists absent stations: {sorted(missing)}")
+        before = len(picks)
+        picks = picks[~picks.station.isin(excl)].reset_index(drop=True)
+        _log(f"  excluded {sorted(excl & known)}: dropped {before-len(picks):,} picks "
+             f"({len(picks):,} remain, {picks.station.nunique()} stations)")
+        if picks.empty:
+            raise SystemExit("all picks excluded")
+
     _t = _time.time()
     _log("Loading stations ...")
-    stations = build_stations_df()
+    stations_all = build_stations_df()          # full network: fixes bbox
+    stations = stations_all.copy()
     pick_stas = set(picks.station.unique())
     stations = stations[stations.station.isin(pick_stas)].reset_index(drop=True)
-    _log(f"  stations with picks: {len(stations)}  ({_time.time()-_t:.1f}s)")
+    _log(f"  stations with picks: {len(stations)} of {len(stations_all)} "
+         f"({_time.time()-_t:.1f}s)")
 
     _t = _time.time()
     _log(f"Loading velocity model from {args.velocity_model} ...")
     vel = load_velocity_model(Path(args.velocity_model), vpvs_ratio=args.vpvs)
     _log(f"  velocity model ready ({_time.time()-_t:.1f}s)")
 
-    # Compute spatial extent in km from station bounding box
-    lat0 = stations.latitude.mean()
-    lon0 = stations.longitude.mean()
-    crs = CRS.from_proj4(f"+proj=tmerc +lat_0={lat0} +lon_0={lon0} +ellps=WGS84")
-    # Compute bounds w/ margin
-    from pyproj import Transformer
-    tx = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
-    sx, sy = tx.transform(stations.longitude.values, stations.latitude.values)
+    # Frozen projection origin (bransfield_eq.geo). NEVER derive this from the
+    # stations that happen to have picks: that moved the origin between runs
+    # (19.9 km between two pools; ~5 km between two months) and silently put
+    # chunks of a year on different coordinate frames.
+    geo.assert_roundtrip()
+    if args.legacy_origin:
+        from pyproj import CRS as _CRS
+        _lat0 = stations.latitude.mean(); _lon0 = stations.longitude.mean()
+        crs = _CRS.from_proj4(f"+proj=tmerc +lat_0={_lat0} +lon_0={_lon0} +ellps=WGS84")
+        _log(f"  [WARN] --legacy-origin: origin DERIVED FROM DATA "
+             f"(lat_0={_lat0:.4f} lon_0={_lon0:.4f}) over the {len(stations)} stations "
+             f"with picks. It moves if station availability changes; do not use for "
+             f"chunked runs that will be merged.")
+    else:
+        crs = geo.make_crs()
+        _log(f"  projection origin (frozen): lat_0={geo.ORIGIN_LAT} lon_0={geo.ORIGIN_LON}")
+    # Bounds from the FULL network so the search area is identical in every
+    # chunk, regardless of which instruments were recording.
+    sx, sy = geo.to_xy(stations_all.latitude.values, stations_all.longitude.values)
+    sx, sy = sx * 1e3, sy * 1e3
     xmin, xmax = (sx.min() - 50e3) / 1e3, (sx.max() + 50e3) / 1e3
     ymin, ymax = (sy.min() - 50e3) / 1e3, (sy.max() + 50e3) / 1e3
     _log(f"  bbox: x [{xmin:.1f}, {xmax:.1f}] km, y [{ymin:.1f}, {ymax:.1f}] km, z [0, {args.z_max_km}] km")
@@ -382,8 +418,27 @@ def main():
 
     out_events = REPO / "catalogs" / f"pyocto_events_{args.label}.csv"
     out_picks = REPO / "catalogs" / f"pyocto_picks_{args.label}.csv"
+    # Self-describing output: x/y are metres-from-origin internally, but the
+    # catalogue also carries true lat/lon so nothing downstream has to know or
+    # guess the projection.
+    if {"x", "y"}.issubset(events.columns) and len(events):
+        if args.legacy_origin:
+            from pyproj import Transformer as _T
+            _inv = _T.from_crs(crs, "EPSG:4326", always_xy=True)
+            _lon, _lat = _inv.transform(events["x"].values * 1e3, events["y"].values * 1e3)
+        else:
+            _lat, _lon = geo.to_latlon(events["x"].values, events["y"].values)
+        events["latitude"] = _lat
+        events["longitude"] = _lon
+        if "z" in events.columns and "depth" not in events.columns:
+            events["depth"] = events["z"]
     events.to_csv(out_events, index=False)
     assoc.to_csv(out_picks, index=False)
+    import json as _json
+    (REPO / "catalogs" / f"pyocto_origin_{args.label}.json").write_text(
+        _json.dumps({**geo.origin_metadata(), "legacy_origin": bool(args.legacy_origin),
+                     "proj4_used": crs.to_proj4(),
+                     "excluded_stations": sorted(excl)}, indent=2))
     print(f"\n  wrote {out_events}")
     print(f"  wrote {out_picks}")
 
