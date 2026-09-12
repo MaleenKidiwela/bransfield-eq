@@ -38,6 +38,7 @@ it sniffs the input and adapts. Supported formats:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 import warnings
 from pathlib import Path
@@ -48,6 +49,8 @@ from bransfield_eq import geo  # noqa: E402
 from bransfield_eq.timeutil import epoch_seconds, assert_nanosecond_sanity  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
+VEL_DELTA_KM = 0.1    # must be <= the thinnest layer we care about (see _resample_velocity)
+VEL_ZDIST_KM = 50.0
 
 # Defaults — tuned for OBS / Bransfield basin, "Standard" event quality from notes
 DEFAULTS = dict(
@@ -62,7 +65,7 @@ DEFAULTS = dict(
 )
 
 
-def load_velocity_model(path: Path, vpvs_ratio: float = 1.78):
+def load_velocity_model(path: Path, vpvs_ratio: float = 1.78, xdist: float = 200.0):
     """Sniff and load a 1D velocity model. Returns pyocto.VelocityModel1D.
 
     Accepts:
@@ -73,8 +76,11 @@ def load_velocity_model(path: Path, vpvs_ratio: float = 1.78):
     import pyocto
     p = Path(path)
     if not p.exists():
-        print(f"  [warn] {p} does not exist; using homogeneous Vp=5.5/Vs=3.1 km/s "
-              f"(Vp/Vs={5.5/3.1:.2f})")
+        # Was a [warn] + homogeneous half-space: a typo in --velocity-model produced a
+        # full catalogue from a constant-velocity model, with the warning buried in a log.
+        raise SystemExit(
+            f"velocity model not found: {p}\n"
+            f"  Refusing to fall back to a homogeneous half-space.")
         return pyocto.VelocityModel0D(p_velocity=5.5, s_velocity=3.1, tolerance=2.0,
                                        location_p_velocity=5.5,
                                        location_s_velocity=3.1)
@@ -125,18 +131,89 @@ def load_velocity_model(path: Path, vpvs_ratio: float = 1.78):
 
     # pyocto's VelocityModel1D loads a pre-computed cache file, not in-memory arrays.
     # Build the cache (depth/Vp/Vs DataFrame → create_model) next to the source CSV.
-    cache = p.with_suffix(".pyocto")
-    if not cache.exists() or cache.stat().st_mtime < p.stat().st_mtime:
-        print(f"  building pyocto velocity cache → {cache.name}")
-        model_df = pd.DataFrame({"depth": depth, "vp": vp, "vs": vs})
-        # Grid covers Bransfield network footprint with comfortable margin.
+    # pyocto's create_model assigns each layer with p_speeds[:, int(d1/delta):int(d2/delta)],
+    # so ANY layer thinner than `delta` produces an empty slice and is DISCARDED, and each
+    # surviving cell takes the velocity of its deepest sample. At the previous delta=1.0 km
+    # only 15 of 68 layers survived: the whole 1.3 km water column and every shallow
+    # gradient vanished, and S-P came out ~1.4-1.5 s too small at all distances -- which
+    # maps straight into epicentral distance and depth. Resample onto the delta grid first
+    # so no layer is thinner than delta, and keep delta fine enough to hold the structure.
+    # No ray in this network crosses seawater: sources are sub-seafloor, OBS sit ON the
+    # seafloor (pyocto places them at their true depth, below the water column), and land
+    # stations sit above it. But the CSV gives the water column vs=0.5 km/s, so any ray to
+    # a LAND station -- which pyocto places at z~0, i.e. at the TOP of the water column --
+    # accumulates ~2.6 s of fictitious S delay through 1.3 km of "water". That was masked
+    # while delta=1.0 discarded the layer; at delta=0.1 it becomes real. Replace the water
+    # column with the first rock velocity: OBS are unaffected (rays never enter it) and
+    # land paths become rock, which is what they physically are.
+    depth, vp, vs = _fill_water_with_rock(depth, vp, vs)
+    model_df = _resample_velocity(depth, vp, vs, VEL_DELTA_KM)
+    key = hashlib.md5(
+        (model_df.round(6).to_csv(index=False)
+         + f"|{VEL_DELTA_KM}|{xdist}|{VEL_ZDIST_KM}").encode()
+    ).hexdigest()[:10]
+    # Cache key covers the model AND the build parameters: keying on mtime alone meant a
+    # changed delta/xdist silently reused the old table.
+    cache = p.with_suffix(f".{key}.pyocto")
+    if not cache.exists():
+        print(f"  building pyocto velocity cache → {cache.name} "
+              f"(delta={VEL_DELTA_KM} km, xdist={xdist:.0f} km, {len(model_df)} layers)")
+        tmp = cache.with_suffix(".tmp")
         pyocto.VelocityModel1D.create_model(
-            model=model_df, delta=1.0, xdist=200.0, zdist=50.0, path=cache,
+            model=model_df, delta=VEL_DELTA_KM, xdist=xdist, zdist=VEL_ZDIST_KM, path=tmp,
         )
+        import os as _os
+        _os.replace(tmp, cache)   # atomic: concurrent chunks can't read a partial table
+    else:
+        print(f"  reusing velocity cache {cache.name}")
     return pyocto.VelocityModel1D(path=cache, tolerance=2.0)
 
 
-def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str,
+def _fill_water_with_rock(depth, vp, vs, water_vp_max=1.6):
+    """Replace the seawater column with the shallowest rock velocity.
+
+    Returns arrays, unchanged if no water column is present."""
+    depth = np.asarray(depth, float).copy()
+    vp = np.asarray(vp, float).copy()
+    vs = np.asarray(vs, float).copy()
+    is_water = vp <= water_vp_max
+    if not is_water.any():
+        return depth, vp, vs
+    first_rock = int(np.argmax(~is_water))
+    if first_rock == 0:
+        return depth, vp, vs
+    vp[:first_rock] = vp[first_rock]
+    vs[:first_rock] = vs[first_rock]
+    print(f"    water column ({is_water.sum()} layers to "
+          f"{depth[first_rock-1]:.3f} km) filled with rock "
+          f"Vp={vp[first_rock]:.3f} Vs={vs[first_rock]:.3f} km/s "
+          f"(no ray in this network crosses water)")
+    return depth, vp, vs
+
+
+def _resample_velocity(depth, vp, vs, delta):
+    """Put the model on a uniform `delta` grid so create_model cannot drop layers.
+
+    Uses slowness averaging within each cell (travel time is the integral of slowness,
+    so averaging slowness preserves vertical travel time; averaging velocity does not)."""
+    depth = np.asarray(depth, float); vp = np.asarray(vp, float); vs = np.asarray(vs, float)
+    zmax = float(depth.max())
+    edges = np.arange(0.0, zmax + delta, delta)
+    fine = np.arange(0.0, zmax, min(delta / 20.0, 0.005))
+    vp_f = np.interp(fine, depth, vp)
+    vs_f = np.interp(fine, depth, vs)
+    rows = []
+    for i in range(len(edges) - 1):
+        m = (fine >= edges[i]) & (fine < edges[i + 1])
+        if not m.any():
+            m = np.array([np.argmin(np.abs(fine - edges[i]))])
+        rows.append((edges[i],
+                     1.0 / np.mean(1.0 / vp_f[m]),
+                     1.0 / np.mean(1.0 / vs_f[m])))
+    return pd.DataFrame(rows, columns=["depth", "vp", "vs"])
+
+
+def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str, dedup_tol: float = 0.0,
                           sources=(("picks", "P"), ("picks_obst_01", "PS")),
                           prob_min: float = 0.0) -> pd.DataFrame:
     """Build the unified pick dataframe in PyOcto format:
@@ -204,6 +281,24 @@ def load_picks_for_pyocto(start_pd, end_pd, picker_pool: str,
         return pd.DataFrame(columns=["station", "t", "phase", "prob"])
     df = pd.concat(rows, ignore_index=True)
     df = df.sort_values("t").reset_index(drop=True)
+
+    # Two pickers over the same stations emit the SAME arrival twice. pyocto's
+    # thresholds (n_picks, n_p_picks, n_s_picks) count PICKS, not stations, and
+    # --min-stations is a dead flag, so a genuine 3-station detection whose picks are
+    # doubled reaches n_picks=6 and is emitted as a 5-station event. Measured on
+    # 2019-011: ~30% of diting picks have a pnlight twin within the match tolerance.
+    if dedup_tol and dedup_tol > 0 and len(df):
+        before = len(df)
+        # df["t"] is datetime64 -- go through timeutil, never a raw cast (pandas 3
+        # makes .astype("int64") on datetimes silently 1000x wrong).
+        bucket = (epoch_seconds(df["t"]) / dedup_tol).round().astype("int64")
+        df = (df.assign(_b=bucket)
+                .sort_values("prob", ascending=False)
+                .drop_duplicates(subset=["station", "phase", "_b"], keep="first")
+                .drop(columns="_b")
+                .sort_values("t").reset_index(drop=True))
+        print(f"  deduplicated cross-picker doubles: {before-len(df):,} dropped "
+              f"({len(df):,} remain, tol={dedup_tol}s)", flush=True)
     return df
 
 
@@ -227,13 +322,26 @@ def main():
     ap.add_argument("--label", default="picker_only",
                     help="output label; 'picker_only' loads PN+OBST, 'with_manual' adds "
                          "manual catalog; any other label uses the picker_only sources")
-    ap.add_argument("--min-stations", type=int, default=DEFAULTS["min_stations"])
+    # NOTE: pyocto OctoAssociator has no n_stations parameter, so this was silently
+    # ignored. Kept only to not break existing callers; warns if set.
+    ap.add_argument("--min-stations", type=int, default=DEFAULTS["min_stations"],
+                    help="DEAD FLAG - pyocto has no such parameter; has no effect.")
     ap.add_argument("--min-p", type=int, default=DEFAULTS["min_p"])
     ap.add_argument("--min-s", type=int, default=DEFAULTS["min_s"])
     ap.add_argument("--min-total", type=int, default=DEFAULTS["min_total"])
     ap.add_argument("--pick-tol", type=float, default=DEFAULTS["pick_match_tolerance"])
     ap.add_argument("--edt-std", type=float, default=DEFAULTS["edt_pick_std"])
     ap.add_argument("--z-max-km", type=float, default=DEFAULTS["z_max_km"])
+    ap.add_argument("--dedup-tol", type=float, default=0.25,
+                    help="collapse picks of the same station+phase within this many "
+                         "seconds to one (keeping highest prob). Two pickers over the "
+                         "same stations otherwise double-count arrivals, and pyocto's "
+                         "thresholds count picks not stations. 0 disables.")
+    ap.add_argument("--time-before", type=float, default=180.0,
+                    help="pyocto time-slice overlap, seconds. Must exceed the maximum S "
+                         "travel time across the search domain or events spanning a slice "
+                         "boundary lose their late arrivals. Was min_node_size*4 = 40 s, "
+                         "which is shorter than S across this network.")
     ap.add_argument("--n-threads", type=int, default=DEFAULTS["n_threads"])
     ap.add_argument("--exclude-stations", default="",
                     help="comma-separated NET.STA to drop before association, e.g. "
@@ -293,6 +401,7 @@ def main():
         _sources.append((subdir, phases or "PS"))
     assert_nanosecond_sanity()
     picks = load_picks_for_pyocto(load_start, load_end, args.label,
+                                  dedup_tol=args.dedup_tol,
                                   sources=tuple(_sources),
                                   prob_min=args.pick_prob_min)
     _log(f"  total picks: {len(picks):,}  "
@@ -327,7 +436,7 @@ def main():
 
     _t = _time.time()
     _log(f"Loading velocity model from {args.velocity_model} ...")
-    vel = load_velocity_model(Path(args.velocity_model), vpvs_ratio=args.vpvs)
+    vel = None   # built after the bbox is known -- the table must span the domain diagonal
     _log(f"  velocity model ready ({_time.time()-_t:.1f}s)")
 
     # Frozen projection origin (bransfield_eq.geo). NEVER derive this from the
@@ -354,6 +463,18 @@ def main():
     ymin, ymax = (sy.min() - 50e3) / 1e3, (sy.max() + 50e3) / 1e3
     _log(f"  bbox: x [{xmin:.1f}, {xmax:.1f}] km, y [{ymin:.1f}, {ymax:.1f}] km, z [0, {args.z_max_km}] km")
 
+    # The travel-time table must span the search-domain diagonal, or pyocto hits
+    # minimisation errors near the corners. The old literal xdist=200 km covered a
+    # domain whose diagonal is ~407 km.
+    import math as _math
+    _diag = _math.hypot(xmax - xmin, ymax - ymin)
+    _xdist = float(_math.ceil(_math.hypot(_diag, args.z_max_km) + 25.0))
+    _log(f"  travel-time table xdist={_xdist:.0f} km (domain diagonal {_diag:.0f} km)")
+    _t = _time.time()
+    _log(f"Loading velocity model from {args.velocity_model} ...")
+    vel = load_velocity_model(Path(args.velocity_model), vpvs_ratio=args.vpvs, xdist=_xdist)
+    _log(f"  velocity model ready ({_time.time()-_t:.1f}s)")
+
     _log(f"Thresholds: min_stations={args.min_stations}, min_P={args.min_p}, "
          f"min_S={args.min_s}, min_total={args.min_total}, pick_tol={args.pick_tol}s, "
          f"n_threads={args.n_threads}")
@@ -363,7 +484,7 @@ def main():
     associator = pyocto.OctoAssociator(
         xlim=(xmin, xmax), ylim=(ymin, ymax), zlim=(0.0, args.z_max_km),
         velocity_model=vel,
-        time_before=DEFAULTS["min_node_size"] * 4,
+        time_before=args.time_before,   # >= max S travel time across the domain
         min_node_size=DEFAULTS["min_node_size"],
         min_node_size_location=1.5,
         pick_match_tolerance=args.pick_tol,

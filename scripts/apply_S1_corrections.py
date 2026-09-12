@@ -61,10 +61,14 @@ print(f"patched station_geometry.csv: {n_lon} lon, {n_lat} lat, {n_z} depth upda
 
 # ---- 3: BRA05 clock correction (-0.167 s) ----
 CLOCK_OFFSET_S = 0.167
-BRA05_DIRS = [
-    REPO / "catalogs" / "picks_obst_01" / "ZX.BRA05",
-    Path("/home/jovyan/my_data/bravoseis/picks/ZX.BRA05"),  # PN output
-]
+# Every pick pool, not a hard-coded pair. The 2026-09-12 re-pick created
+# picks_pn_diting/ and picks_pnlight_obs/ which this list did not cover, so a
+# full-year association ran on BRA05 picks that were still 0.167 s late.
+# Globbing means any future pool is covered automatically.
+BRA05_DIRS = sorted(
+    {d.resolve() for d in REPO.glob("catalogs/picks*/ZX.BRA05") if d.is_dir()}
+    | {Path("/home/jovyan/my_data/bravoseis/picks/ZX.BRA05").resolve()}
+)
 for d in BRA05_DIRS:
     if not d.exists():
         print(f"  skip: {d} not found")

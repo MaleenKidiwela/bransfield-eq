@@ -31,6 +31,8 @@ GRID_LAYOUTS = {
     "ORCA":    ((-29.8, 30.2), (-20.0, 20.0)),
     "ORCA_v2": ((-150.0, 80.0), (-110.0, 70.0)),
 }
+# Deepest travel-time node: ORCA 126 nodes x 0.2 km = 25.0; ORCA_v2 64 x 0.4 = 25.2.
+GRID_Z = {"ORCA": (0.0, 25.0), "ORCA_v2": (0.0, 25.2)}
 
 
 def main() -> None:
@@ -44,10 +46,22 @@ def main() -> None:
 
     df = pd.read_csv(REPO / "catalogs" / f"nlloc_{args.label}.csv")
     (gx0, gx1), (gy0, gy1) = GRID_LAYOUTS[args.tt_prefix]
+    # The boundary test used to check x and y only, so DEPTH-pinned events passed every
+    # tier untagged: 13.2% of the old "reliable" file sat at depth < 0.05 km (top of grid,
+    # with artificially small sigma_z) and 2.3% at the bottom face. z is now included.
+    gz0, gz1 = GRID_Z[args.tt_prefix]
     df["on_boundary"] = (
         (df.nlloc_x_km - gx0 < 0.5) | (gx1 - df.nlloc_x_km < 0.5) |
-        (df.nlloc_y_km - gy0 < 0.5) | (gy1 - df.nlloc_y_km < 0.5)
+        (df.nlloc_y_km - gy0 < 0.5) | (gy1 - df.nlloc_y_km < 0.5) |
+        (df.depth_km - gz0 < 0.5) | (gz1 - df.depth_km < 0.5)
     )
+    # NLLoc writes a full GEOGRAPHIC line even when it REJECTS a solution, so rejected
+    # events used to enter every tier. Script 31 now records the status.
+    if "nlloc_status" in df.columns:
+        n_rej = (df.nlloc_status != "LOCATED").sum()
+        if n_rej:
+            print(f"  dropping {n_rej:,} non-LOCATED solutions")
+        df = df[df.nlloc_status == "LOCATED"].copy()
 
     # Station-hull mask (ZX OBS convex hull)
     st = pd.read_csv(ST)
@@ -80,7 +94,10 @@ def main() -> None:
 
     chosen = {"loose": loose, "standard": standard, "strict": strict}[args.tier]
     out = df[chosen].copy()
-    out_path = REPO / "catalogs" / f"nlloc_{args.label}_reliable.csv"
+    # Every tier used to write "_reliable.csv", so a --tier loose run silently
+    # overwrote the strict/standard file and downstream could not tell them apart.
+    out["qc_tier"] = args.tier
+    out_path = REPO / "catalogs" / f"nlloc_{args.label}_{args.tier}.csv"
     out.to_csv(out_path, index=False)
     print(f"\nwrote {len(out):,} {args.tier} events -> {out_path}")
 

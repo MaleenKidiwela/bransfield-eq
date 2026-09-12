@@ -77,18 +77,26 @@ ev = sorted(out.glob("events_*.csv")); pk = sorted(out.glob("picks_*.csv"))
 print(f"  {len(ev)} daily event files, {len(pk)} pick files")
 E=[]; P=[]; off=0
 for e,p in zip(ev,pk):
-    de=pd.read_csv(e); dp=pd.read_csv(p)
-    if de.empty: continue
+    # A day with no events is written as a 1-byte file; pd.read_csv raises
+    # EmptyDataError on it, which would abort the merge after the whole year.
+    try:
+        de=pd.read_csv(e); dp=pd.read_csv(p)
+    except pd.errors.EmptyDataError:
+        continue
+    if de.empty or dp.empty: continue
     # Daily 'idx' restarts at 0 every chunk. Make a GLOBALLY unique event key
     # before merging -- joining on a per-chunk idx matched 2.5% of rows the
     # last time this was done wrong.
-    de["event_uid"]=de["idx"]+off
+    # Name it event_idx: scripts 22/28/31/45/48/49 all key on event_idx, so a
+    # differently-named global key would leave them joining on the chunk-local
+    # one and silently pooling picks across days.
+    de["chunk_idx"]=de["idx"]; de["event_idx"]=de["idx"]+off
     kc="event_idx" if "event_idx" in dp.columns else "idx"
-    dp["event_uid"]=dp[kc]+off
+    dp["chunk_idx"]=dp[kc]; dp["event_idx"]=dp[kc]+off
     off += int(de["idx"].max())+1
     E.append(de); P.append(dp)
 ev_all=pd.concat(E,ignore_index=True); pk_all=pd.concat(P,ignore_index=True)
-assert ev_all.event_uid.is_unique, "event_uid not unique after merge"
+assert ev_all.event_idx.is_unique, "event_idx not unique after merge"
 ev_all.to_csv("catalogs/pyocto_events_year_newpool.csv", index=False)
 pk_all.to_csv("catalogs/pyocto_picks_year_newpool.csv", index=False)
 print(f"  wrote {len(ev_all):,} events / {len(pk_all):,} picks")

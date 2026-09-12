@@ -33,6 +33,7 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
 
+STATUS_RE = re.compile(r'^NLLOC\s+"[^"]*"\s+"(\w+)"')
 GEO_RE = re.compile(
     r"GEOGRAPHIC\s+OT\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)"
     r"\s+Lat\s+(-?[\d.]+)\s+Long\s+(-?[\d.]+)\s+Depth\s+(-?[\d.]+)")
@@ -53,13 +54,17 @@ def parse_hyp(path: Path) -> dict | None:
     yr, mo, dy, hr, mn = (int(g.group(i)) for i in range(1, 6))
     sec = float(g.group(6))
     lat, lon, depth = (float(g.group(i)) for i in (7, 8, 9))
-    isec = int(sec)
-    micro = int(round((sec - isec) * 1e6))
-    if micro >= 1_000_000:  # clamp roundoff at 60s edge
-        micro -= 1_000_000
-        isec += 1
-    ot = pd.Timestamp(yr, mo, dy, hr, mn, isec, micro, tz="UTC")
-    rec: dict = {"origin_time": ot, "lat": lat, "lon": lon, "depth_km": depth}
+    # NLLoc can emit a NEGATIVE seconds field (origin rolled back past the minute,
+    # e.g. "00 00 -17.703086"). Building Timestamp(...) with a negative component
+    # raised, so the event was silently dropped -- one real event was lost this way.
+    # Adding a Timedelta handles negatives and >=60 s alike.
+    ot = pd.Timestamp(yr, mo, dy, hr, mn, tz="UTC") + pd.Timedelta(seconds=sec)
+    st = STATUS_RE.search(text)
+    # NLLoc writes a full GEOGRAPHIC line even for REJECTED solutions, so they parsed
+    # as clean locations and entered the catalogue unflagged (569 of 31,516 in the v2
+    # run, incl. boundary-pinned events with sigma_z of 7.5 km).
+    rec: dict = {"origin_time": ot, "lat": lat, "lon": lon, "depth_km": depth,
+                 "nlloc_status": (st.group(1) if st else "UNKNOWN")}
     h = HYPO_RE.search(text)
     if h:
         rec.update(nlloc_x_km=float(h.group(1)),

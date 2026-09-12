@@ -75,7 +75,10 @@ def main() -> None:
     # so 0 = top of rock = seafloor.
     v1d_full = pd.read_csv(VMOD1D)
     SEAFLOOR_SHIFT_KM = 1.3
-    v1d = v1d_full[v1d_full.depth_km >= SEAFLOOR_SHIFT_KM].copy()
+    # NOTE: strictly greater. configs/velocity_model.csv has its LAST WATER row at
+    # exactly 1.3 km (1.4558 km/s); >= kept it, so the 'rock-only' profile began
+    # with a water node and all 15 land stations sat on 1.4558 km/s in the grid.
+    v1d = v1d_full[v1d_full.depth_km > SEAFLOOR_SHIFT_KM].copy()
     v1d["depth_km"] = v1d["depth_km"] - SEAFLOOR_SHIFT_KM
     print(f"1D rock-only model (shifted to depth-below-seafloor): "
           f"depth {v1d.depth_km.min():.2f}..{v1d.depth_km.max():.1f} km, "

@@ -1,0 +1,212 @@
+# Session 2026-09-12 — every change, and what might be wrong with it
+
+Written so the work can be audited rather than trusted. Each entry says what was
+changed, why, what evidence supports it, and **what could still be wrong**.
+
+Decision taken with the user mid-session: **we locate the NEW picks only. No
+output from any older run is reused or trusted.** Bugs that exist only in old
+products (hybrid catalogue, Stage A/B hypoDD, old GrowClust runs) are therefore
+recorded but not fixed.
+
+---
+
+## A. Things I got wrong during this session
+
+Listed first, deliberately.
+
+1. **I recommended raising picker workers to 40** on the basis that the box had
+   176 cores. It has a **32-CPU cgroup quota**; we were already at 98% throttling.
+   Raising it would have made throughput worse. Caught by the user asking how many
+   CPUs we actually have.
+2. **My hypoDD 3D grid-resolution argument was wrong.** I claimed 25x25 nodes was
+   already finer than the tomography resolves, reasoning from 3-4 km instrument
+   spacing. That conflates receiver spacing with tomographic resolution — with
+   2,426 dense airgun shots, resolution in the top 2-3 km is plausibly 1-2 km.
+   I also stated a resolution the README never documents. The conclusion (don't
+   recompile) may still hold, but not for the reason I gave.
+3. **I oversold the cross-correlation normalisation bug.** My own table shows the
+   old kernel reaching 0.34 ms RMS once bandpassed — the swell was the problem,
+   the triangular taper was secondary hygiene.
+4. **My reason for keeping the land stations was wrong.** I said distant stations
+   constrain the depth-distance tradeoff; they don't — near stations and S-P do.
+5. **I proposed reverting the 18/18b bandpass edits** because R3b would replace
+   them. The user pushed back correctly: R3b is not written, so those scripts are
+   still the only XC path, and the guard has standalone value.
+6. **My first XC fix was bypassed entirely.** Script 18 reads pre-cut windows from
+   `pick_windows.npy` when it exists and never calls the loader I patched, so it
+   would have printed the band it wanted while correlating raw data. Fixed with a
+   sidecar + refuse-on-mismatch, but the first version was useless.
+7. **I wrote a dedup that crashed on every day** — divided a datetime column by a
+   float, i.e. nearly the exact pandas-3 trap this repo already documents. Caught
+   by the run failing immediately; now goes through `timeutil.epoch_seconds`.
+
+---
+
+## B. Code changes, in order
+
+### B1. `src/bransfield_eq/xcfilter.py` (new) + `scripts/18`, `18b`
+Bandpass before cross-correlation, default 3-20 Hz, applied per station-day.
+
+**Why:** raw OBS is 99.9% power below 3 Hz (measured, ZX.BRA02 2019 doy 190).
+Sub-5 Hz holds 27.5% of signal power but 64.4% of noise. Leakage test on 2,989
+windows displaced by a known lag: unfiltered 4.58 ms RMS, 10.2% of measurements
+>5 ms, at mean cc 0.993 — invisible to `CC_THRESH`.
+
+**What could be wrong:** the band was chosen only from the noise side, using
+*identical* waveforms displaced. Real event pairs decorrelate with frequency, so
+the optimum on real pairs is probably narrower (Merlin suggests ~3-12 Hz P,
+2-8 Hz S, and a per-phase band). **Not validated on real pairs.** Also
+`xcfilter.bandpass` returns data UNFILTERED, silently, if the array is short or
+contains a non-finite sample — the same silent-failure class it was written to fix.
+
+### B2. `src/bransfield_eq/geo.py` (new) + `scripts/17`
+Frozen map-projection origin (-62.5, -58.8); search box from all 38 stations;
+lat/lon/depth written into the catalogue; origin sidecar; round-trip assertion.
+
+**Why:** the origin was the mean position of *stations that had picks*, so it
+moved between runs (5 km between two months, 19.9 km between two pick pools) and
+was never recorded. A chunked year run would have stitched together mismatched
+frames silently.
+
+**What could be wrong:** the frozen origin differs from NLLoc's
+(`TRANS SIMPLE -62.4413 -58.44 36`, rotated). That is fine *provided* every
+cross-stage exchange uses lat/lon — but it means x/y from pyocto and from NLLoc
+are NOT interchangeable and never were. Existing catalogues are in the legacy
+frame, 3.05 km from the frozen one; do not compare their stored x/y to
+`geo.to_xy(lat,lon)`.
+
+### B3. `scripts/17` — velocity model discretisation  **[largest correctness change]**
+`create_model(delta=1.0)` -> resample onto a 0.1 km grid first, slowness-averaged.
+
+**Why:** pyocto assigns layers with `p_speeds[:, int(d1/delta):int(d2/delta)]`, so
+any layer thinner than `delta` yields an empty slice and is DISCARDED. At
+delta=1.0 only **15 of 68 layers survived**; the entire 1.3 km water column and
+every shallow gradient vanished, and each surviving cell took its *deepest*
+(fastest) velocity. Measured effect vs a correctly discretised model: S-P was
+**1.4-1.5 s too small at all distances**, which maps directly into epicentral
+distance and depth.
+
+**What could be wrong:** this changes every travel time, so the new catalogue is
+NOT comparable to any previous one. I have not independently verified the new
+table against an analytic solution — only that it builds and that the layer count
+is now 700. `delta=0.1` is a judgement call; 0.05 would be safer and slower.
+
+### B4. `scripts/17` — water column filled with rock velocity
+**Why:** the CSV gives water `vs = 0.5 km/s`. No ray in this network crosses
+water (sources sub-seafloor, OBS on the seafloor, land above), but pyocto places
+LAND stations at z~0, i.e. at the top of the water column, so land rays picked up
+~2.6 s of fictitious S delay. This was masked while delta=1.0 deleted the layer;
+at delta=0.1 it becomes real.
+
+**What could be wrong:** this is my inference, endorsed by Merlin for NLLoc but
+applied here to pyocto by analogy. If pyocto internally handles the water column
+for OBS in a way I have not traced, filling it could change OBS travel times too.
+I verified only that OBS sit below it (`station z ... max=1.94 km`), not the
+internal ray logic.
+
+### B5. `scripts/17` — travel-time table sized to the domain
+Fixed `xdist=200` -> computed from the bbox diagonal (now 434 km for a 407 km
+diagonal). pyocto's own docs: the model must exceed the search-domain diagonal.
+
+### B6. `scripts/17` — `time_before` 40 s -> 180 s (`--time-before`)
+**Why:** it was `min_node_size * 4`, i.e. derived from a *spatial* parameter. The
+script's own help text says the margin should be >= max P travel time (~120 s).
+Events spanning a time-slice boundary lost their late arrivals.
+
+**What could be wrong:** 180 s is chosen to exceed max S across the domain; I did
+not measure the true maximum. Too large costs runtime, not correctness.
+
+### B7. `scripts/17` — cross-picker pick dedup (`--dedup-tol`, default 0.25 s)
+**Why:** two pickers over the same stations emit the same arrival twice (~30% of
+diting picks have a pnlight twin). pyocto's thresholds count PICKS, not stations,
+and `--min-stations` is a dead flag, so a genuine 3-station detection whose picks
+are doubled reaches `n_picks=6` and is emitted as a 5-station event. Measured on
+the smoke-test day: 4,771 of 62,704 picks (7.6%) dropped.
+
+**What could be wrong:** 0.25 s is arbitrary. Too large merges genuinely distinct
+arrivals; too small leaves doubles. Keeping the highest-probability twin biases
+toward whichever model is better calibrated, not necessarily better timed —
+`diting` has the better timing (P bias -10 ms, MAD 25 ms) but not always the
+higher probability. **A per-phase, timing-aware rule would be better.**
+
+### B8. `scripts/17` — no silent homogeneous fallback
+A missing `--velocity-model` used to print `[warn]` and continue with a constant
+5.5/3.1 km/s half-space. Now exits.
+
+### B9. `scripts/17` — cache key covers build parameters
+The `.pyocto` cache was invalidated by mtime alone, so changing `delta`/`xdist`
+silently reused the old table (the mechanism by which B3's fix would have failed
+to take effect). Now hashed on model + parameters, written atomically.
+
+### B10. `scripts/apply_S1_corrections.py` — BRA05 correction covers all pools
+**Why:** `BRA05_DIRS` hard-coded two directories. The new pools created this
+session were never corrected, and the first year run was associating **BRA05
+picks 0.167 s late**. Verified by the fractional-second signature, then applied:
+398 csvs in each of the two pools.
+
+**What could be wrong:** I applied the shift to `picks_bench_bpae_stead` and
+`picks_bench_eqcct_p` before restricting scope (10 csvs each). Those are
+benchmark directories; the 12-picker benchmark numbers are therefore no longer
+exactly reproducible from those two directories. The production pools are
+correct. **This is a real mistake, recorded here.**
+
+### B11. `scripts/17f_pyocto_year_newpool.sh` (new) — year driver
+Replaces `17e`, which never passed `--pick-sources` and so would have silently
+associated the **OLD** pick pool for ~12 h, and which assumed 100 cores.
+Also fixed in the merge: empty days crashed `pd.read_csv`; the global key is now
+`event_idx` (what every downstream stage reads) rather than `event_uid`.
+
+**What could be wrong:** the merge pairs event and pick files by sorted position,
+not by tag — if one `mv` fails, every later day joins the wrong day's picks while
+the uniqueness assert still passes. **Not yet fixed.** There is also no per-day
+lock, so two concurrent invocations race on the same output names.
+
+### B12. `scripts/38_build_extended_velgrid.py` — one-character fix
+`depth_km >= 1.3` -> `> 1.3`. The row at exactly 1.3 km is still water (1.4558),
+so the "rock-only" profile began with a water node and all 15 land stations sat
+on seawater in the NLLoc grid.
+
+### B13. `scripts/31_nlloc_hyp_to_catalog.py`
+- negative seconds in the GEOGRAPHIC line no longer drop the event (one real
+  event was lost this way: NLLoc rolled the origin back past midnight)
+- `nlloc_status` column records LOCATED/REJECTED. Previously 569 of 31,516
+  REJECTED solutions entered the catalogue unflagged.
+
+**What could be wrong:** the positional obs_order -> event_idx mapping is still
+unguarded. A single missing per-event `.hyp` shifts every later event in that
+shard — the same failure class as the 2026-05-20 scrambling. Current runs verify
+clean, but **nothing enforces it**.
+
+### B14. `scripts/40_filter_nlloc_reliable.py`
+- boundary test now includes DEPTH (13.2% of the old "reliable" file sat at
+  depth < 0.05 km, top-of-grid pinned with artificially small sigma_z)
+- drops non-LOCATED solutions
+- writes `nlloc_<label>_<tier>.csv` instead of one `_reliable.csv` for every tier
+
+---
+
+## C. Known-but-NOT-fixed (deliberate, because we rebuild from new picks)
+
+- Hybrid catalogue anchors on the wrong join key (`id` vs `id-1`), Stage A ids
+  come from a different numbering generation entirely.
+- Stage B sub-region merge compares coordinates in two frames 8.4 km apart;
+  changes the winning sub-region for 9.2% of events.
+- Stage B covers only 31% of the catalogue; nothing reports the other 69%.
+- GrowClust output written with integer column headers (24 names vs 25 columns).
+- `18`'s `--max-dt-sec` (the 1-hour pair limit) is documented but **never applied**.
+- hypoDD and GrowClust both flatten all OBS to z=0.
+- hypoDD velocity decimation biases vertical travel time by +138 ms.
+- dt.cc carries zero cross-correlation data in existing hypoDD runs
+  (`nccp`/`nccs` = 0 throughout) — those relocations are catalogue-differential only.
+
+## D. Open questions I could not settle
+
+1. **Station A/B test never completed** — whether to drop 5M.BYE / 5M.TOW
+   (0.06% association rate, more raw picks than any OBS) is still unanswered.
+2. **Deep events**: 17-18% of events sit at >=20 km, 6-7% pile against the 40 km
+   search lid, and land picks are 3x over-represented in them. Cause not isolated.
+3. **NLLoc datum**: the model is "sheared" (hung from the local seafloor) but used
+   as Cartesian, and every station sits at z=0. Merlin's recommended fix (un-shear
+   with `srModel.elevation`, put OBS at true depth) is **not implemented**.
+4. **Vp/Vs = 1.78 everywhere**, including ~2 km of sediment where 2-3 is normal.
+5. Whether the new velocity discretisation actually improves locations — untested.
