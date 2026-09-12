@@ -34,10 +34,15 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "src"))
+
+from bransfield_eq import xcfilter  # noqa: E402
 WAVE_DIR = REPO / "data" / "waveforms"
 
 # Keep these constants in sync with scripts/18_growclust_xc_prep.py.
 WIN_SEC = 1.5
+BANDPASS = xcfilter.DEFAULT_BAND   # (lo, hi) Hz, or None for raw. Unfiltered OBS
+                                   # leaks ~4.6 ms RMS into dt.cc; see xcfilter.
 FS_TARGET = 100.0
 N_SAMPLES = int(2 * WIN_SEC * FS_TARGET)   # 300
 
@@ -80,6 +85,9 @@ def _load_station_day_array(network, station, year, doy):
         except Exception:
             return None
     data = np.ascontiguousarray(tr.data, dtype=np.float32)
+    # Bandpass the whole day once, before any window is cut from it.
+    if BANDPASS is not None:
+        data = xcfilter.bandpass(data, BANDPASS[0], BANDPASS[1], FS_TARGET)
     return data, float(tr.stats.starttime.timestamp)
 
 
@@ -107,7 +115,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only")
     ap.add_argument("--workers", type=int, default=32)
+    xcfilter.add_cli(ap)
     args = ap.parse_args()
+
+    global BANDPASS
+    BANDPASS = xcfilter.band_from_args(args)
+    print(f"  XC bandpass: {'OFF (raw)' if BANDPASS is None else f'{BANDPASS[0]}-{BANDPASS[1]} Hz'}")
 
     out_dir = REPO / "growclust" / args.label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +218,21 @@ def main():
     # Flush memmap to disk.
     mm.flush()
     del mm
+
+    # Stamp the filter state alongside the memmap. Script 18 reads this and
+    # refuses to correlate windows that were cut under a different band --
+    # otherwise it would print the band it *wants* while correlating whatever
+    # these windows actually contain, which is silent and unrecoverable.
+    import json as _json
+    meta = {
+        "bandpass": list(BANDPASS) if BANDPASS is not None else None,
+        "win_sec": WIN_SEC,
+        "fs_target": FS_TARGET,
+        "n_samples": N_SAMPLES,
+        "written_by": "18b_prewindow_picks.py",
+    }
+    (out_dir / "pick_windows_meta.json").write_text(_json.dumps(meta, indent=2))
+    print(f"  wrote pick_windows_meta.json  (bandpass={meta['bandpass']})")
 
     # Write pick index sidecar.
     idx = picks[["pick_id", "event_idx", "network", "station",

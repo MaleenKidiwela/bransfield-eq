@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from bransfield_eq.timeutil import epoch_ns  # noqa: E402
+from bransfield_eq import xcfilter  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 WAVE_DIR = REPO / "data" / "waveforms"
@@ -40,6 +41,9 @@ MAX_DT_SEC  = 60 * 60   # event-pair max origin-time difference (1 h)
 WIN_SEC     = 1.5       # ± window around each pick
 CC_THRESH   = 0.6       # min normalised cross-correlation to keep
 FS_TARGET   = 100.0     # resample to this rate before XC (matches PhaseNet input)
+BANDPASS    = xcfilter.DEFAULT_BAND   # (lo, hi) Hz, or None to correlate raw data.
+                                      # Raw OBS is swell-dominated: unfiltered XC leaks
+                                      # ~4.6 ms RMS into dt at cc~0.99. See xcfilter.
 MAX_LAG_SEC = 0.5       # search window for best lag
 MAX_PAIRS   = None      # cap pairs per event (None = no cap)
 
@@ -113,6 +117,8 @@ def slice_window(stream, pick_time_utc, win_sec):
     if tr.stats.sampling_rate != FS_TARGET:
         tr.resample(FS_TARGET, no_filter=True)
     data = np.asarray(tr.data, dtype=np.float32)
+    if BANDPASS is not None:
+        data = xcfilter.bandpass(data, BANDPASS[0], BANDPASS[1], FS_TARGET)
     # De-mean + unit norm
     data = data - data.mean()
     n = np.linalg.norm(data)
@@ -236,6 +242,10 @@ def _load_station_day_array(network, station, year, doy):
         except Exception:
             return None
     data = _np.ascontiguousarray(tr.data, dtype=_np.float32)
+    # Bandpass the whole day once: cheaper than per-window filtering and leaves
+    # no filter transient inside any window sliced from it.
+    if BANDPASS is not None:
+        data = xcfilter.bandpass(data, BANDPASS[0], BANDPASS[1], FS_TARGET)
     starttime_unix = float(tr.stats.starttime.timestamp)
     return data, starttime_unix
 
@@ -444,13 +454,14 @@ def write_dtcc(pairs: dict, out_path: Path):
 # --------------------------------------------------------------------------------------
 
 def main():
-    global WIN_SEC, CC_THRESH, MAX_LAG_SEC, PICK_WINDOWS
+    global WIN_SEC, CC_THRESH, MAX_LAG_SEC, PICK_WINDOWS, BANDPASS
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only")
     ap.add_argument("--max-dist-km", type=float, default=MAX_DIST_KM)
     ap.add_argument("--max-dt-sec", type=float, default=MAX_DT_SEC)
     ap.add_argument("--win-sec", type=float, default=WIN_SEC)
     ap.add_argument("--cc-thresh", type=float, default=CC_THRESH)
+    xcfilter.add_cli(ap)
     ap.add_argument("--max-lag-sec", type=float, default=MAX_LAG_SEC)
     ap.add_argument("--max-pairs-per-event", type=int, default=80,
                     help="Cap nearest neighbours per event; keeps runtime bounded.")
@@ -469,6 +480,8 @@ def main():
     # Override module globals so XC kernel sees consistent values
     WIN_SEC = args.win_sec
     CC_THRESH = args.cc_thresh
+    BANDPASS = xcfilter.band_from_args(args)
+    print(f"  XC bandpass: {'OFF (raw)' if BANDPASS is None else f'{BANDPASS[0]}-{BANDPASS[1]} Hz'}")
     MAX_LAG_SEC = args.max_lag_sec
 
     out_dir = REPO / "growclust" / args.label
@@ -500,6 +513,37 @@ def main():
         n_valid = int(idx["valid"].sum()) if "valid" in idx.columns else len(idx)
         print(f"  PICK_WINDOWS shape {PICK_WINDOWS.shape}  "
               f"({n_valid:,} valid / {len(idx):,} picks)")
+        # These windows were cut and filtered by 18b; nothing here can re-filter
+        # them. If 18b used a different band than we were asked for, the run
+        # would silently correlate the wrong data while reporting the right
+        # band. Refuse instead.
+        import json as _json
+        meta_path = out_dir / "pick_windows_meta.json"
+        mm_band = None
+        if meta_path.exists():
+            mm_band = _json.loads(meta_path.read_text()).get("bandpass")
+            mm_band = tuple(mm_band) if mm_band else None
+            stamped = True
+        else:
+            stamped = False   # written before 2026-09-12 => unfiltered
+        want = tuple(BANDPASS) if BANDPASS is not None else None
+        if mm_band != want:
+            how = (f"band {mm_band[0]}-{mm_band[1]} Hz" if mm_band else
+                   ("UNFILTERED" if stamped else "UNFILTERED (no meta sidecar; "
+                    "written before the bandpass fix)"))
+            wanted = f"{want[0]}-{want[1]} Hz" if want else "unfiltered"
+            sys.exit(
+                f"\n  pick_windows.npy in {out_dir} holds {how} windows, but this "
+                f"run asked for {wanted}.\n"
+                f"  The memmap cannot be re-filtered here. Either:\n"
+                f"    regenerate:  PYTHONPATH=src python3 scripts/18b_prewindow_picks.py "
+                f"--label {args.label}" + (f" --bandpass {want[0]} {want[1]}" if want else " --no-bandpass") + "\n"
+                f"    or match it: add " + ("--no-bandpass" if mm_band is None else
+                                            f"--bandpass {mm_band[0]} {mm_band[1]}") +
+                f" to this command (reproduces the older run).\n")
+        print(f"  window filter: {'unfiltered' if want is None else f'{want[0]}-{want[1]} Hz'} "
+              f"(verified against pick_windows_meta.json)" if stamped else
+              f"  window filter: unfiltered (legacy memmap, no sidecar)")
     else:
         print(f"  [warn] no pre-windowed snippets found at {mm_path} -- "
               f"falling back to legacy on-the-fly mseed reads (very slow).")
