@@ -27,6 +27,8 @@ GRID_LAYOUTS = {
     "ORCA_v2": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
     "ORCA_v3": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
     "ORCA_v4": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
+    # v5 = the v4 model with pykonal (FMM) travel-time grids instead of Grid2Time (script 59)
+    "ORCA_v5": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
 }
 
 
