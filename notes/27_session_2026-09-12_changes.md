@@ -1249,3 +1249,17 @@ simulps-style, or a depth-dependent Vp/Vs with S grids), which is a separate pro
 Delivered position: **NLLoc v5** for absolute locations (forward model verified by two
 independent solvers) with the depth caveat, and **hypoDD 3D on v5** for relative geometry
 (depth axis ~18% shorter than NLLoc's, consistent from either start).
+
+### I28. Internal inconsistencies flagged by the write-up pass (notes/28) — dispositions
+1. DAMP 20 slope −0.80 (I7) vs −0.53 (I8 table): I8 supersedes; I7's figure came from a
+   fused-field parse of the iteration table that I8 explicitly calls unreliable. Use −0.53.
+2. Strict tier 2,277 (gate-4 row) vs 2,278 (final list): the gate row was written before the
+   final filter pass; the CSV on disk has 2,278 rows. Use 2,278.
+3. QC counts in I5/I18 do not add up (e.g. 6,783 − 57 − 247 ≠ 6,483) because the two flags
+   overlap; the pass counts are the script outputs and stand.
+4. Merlin's I9 table: quoted only in its I11/I12-corrected form; the original is retained
+   as history.
+5. "Pinned fraction 41% on v3/v4" (I23) is Merlin's number and does not match the measured
+   sample gates (24.2–24.3% on v4); the measured value is authoritative. I16's "benchmark
+   89/96%" refers to the picker-benchmark set (notes/24), not to the recall table.
+Notes/28 is the clean methods/status document; notes/27 remains the audit trail.
