@@ -1215,3 +1215,15 @@ seafloor, the opposite of I15's ORCA_v4slow), pykonal grids, same sample, same g
 pass; depth below local seafloor p10/50/90 0.05/2.38/5.21 km. Movie
 `notes/figures/hypodd3d_animation_year_v4_3d_i2_damp400_qc.mp4` delivered. The same 3D
 chain on the v5 standard tier is running (`hypodd/year_v5_3d`).
+
+### I26. hypoDD 3D on the v5 standard tier
+Inputs `hypodd/year_v5_3d` (6,902 → ph2dt 6,535 events, 326,280 pairs, sea-level datum,
+true station depths). IMOD=9 fine model, ISTART 2, DAMP 400: 6,082 trial sources, 6,022
+relocated (92%), RMSCT 196 → 74 ms, CND 117 → 98 (inside the manual's window for the
+first time), slope −0.176, Spearman 0.87, p90 8.29 → 7.11 km, median |dz| 0.58 km.
+QC: 606 (10%) above local seafloor, 223 poorly linked → 5,227 pass; depth below local
+seafloor p10/50/90 0.12/2.56/5.93 km → `catalogs/hypodd_year_v5_3d_qc.csv`, movie
+`notes/figures/hypodd3d_animation_year_v5_3d_qc.mp4`. The 3D relocation compresses the
+NLLoc depth axis by ~18% from either start (v4 −0.171, v5 −0.176): consistent, and
+smaller than the 1D flat-model figure (−0.23), as expected once the forward model is
+3D and the stations sit at true depth.
