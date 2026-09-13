@@ -663,3 +663,13 @@ is the repo's standing convention (outputs are not versioned), not a new decisio
 — but my commit messages overstated it. Scripts, grids headers, notes and the
 movie ARE committed, and every CSV is reproducible from them. If the catalogues
 should be versioned, that is a deliberate `.gitignore` change for the user to make.
+
+The same applies to **every movie** (`notes/figures/**/*.mp4`, .gitignore line 53) and
+**every NLLoc grid/header** (`nlloc/`, line 83). Commits ced9c31, 854a173 and
+c4288d8 name mp4 and `.hdr` files they do not contain. What IS in git, in full:
+scripts, `src/`, notes (incl. this log), `configs/velocity_model.csv`,
+`catalogs/station_geometry.csv`, `catalogs/manual_picks.csv`. What is disk-only
+and was **delivered to the user as files**: all `catalogs/*.csv` products, both
+movies, all grids. Everything disk-only is reproducible from what is committed:
+scripts 17f → discriminate_shots → 41 → 39 → 29/30 → 31 → 40 → 34 (NLLoc chain)
+and 22 → 23 → 24 → 50 (hypoDD chain), with the parameters recorded in this log.
