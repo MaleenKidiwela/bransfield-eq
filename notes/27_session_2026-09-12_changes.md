@@ -292,3 +292,77 @@ cannot game the way it can game a residual-slope test.
   sources (more raw picks than any OBS, 0.06% association rate).
 - Whether strict (2,152) is the right operating point now the depth test is active.
 - `--min-s` remains inert (hard-wired to `min_p`); tuning is still not possible.
+
+---
+
+## F. Why the depths are pinned — and why v1 depths must NOT be released
+
+Merlin's read, cross-checked against the data. **This supersedes E2's tentative
+explanation and E4's "ship with caveats".**
+
+### F1. Two different phenomena, not one
+
+|  | top face (41-46%) | bottom face (7-14%) |
+|---|---|---|
+| PDF | **sharp**: ExpectZ 0.19, sigma_z 0.19 km | flat: ExpectZ 19, sigma_z 5.7 km |
+| rms | **0.32** vs 0.20 for interior events | — |
+| geometry | in-network, nearest station 2.2 km median | gap p50 334 deg, outside network |
+
+A flat PDF is depth degeneracy (what I assumed). A **sharp** minimum pressed
+against a boundary with elevated rms means the true solution lies **outside the
+grid — above z = 0**.
+
+### F2. The mechanism: real shallow events the grid cannot represent
+The user's point that Orca has a shallow magma chamber is the key. A source
+0.2 km below the caldera floor sits at ~1.25 km BSL; BRA13/14/15/16 sit at
+1.32-1.50 km BSL. **The event is physically above those stations.** The flattened
+seafloor datum enforces z >= 0, so no source can ever be above any station.
+NLLoc's best compromise is z = 0 with the deep-water stations predicted late.
+
+Residual evidence (weighted picks, top-pinned vs interior):
+
+    P, station <5 km : -0.130 (pinned) vs -0.014 (interior)
+    S, station <5 km : -0.177 vs -0.011
+    S, station >15 km: +0.106 vs +0.015
+
+Near stations see arrivals ~0.13-0.18 s EARLIER than any in-grid source can
+predict. Per-station medians match the geography: BRA15 -0.144, BRA16 -0.098,
+BRA13 -0.092 (the deep-water western group).
+
+So these events are not junk. They are real, and their depths are unmeasured.
+
+### F3. What I ruled out myself
+- **My velocity-grid rebuild**: A/B on 2,000 events, ORCA_v2 vs ORCA_v3 travel
+  times, everything else identical -> 40.5% vs 40.8% pinned. Exonerated.
+- **A second BRA05-class clock error**: per-station P residual by month over 14
+  months. BRA05 +4.7 ms/month, BRA15 +4.6, BRA26 +4.0, BRA21 -1.3, BRA22 -2.1 —
+  all small and NON-monotonic. BRA05/15/26 instead share a common excursion to
+  -0.15..-0.19 s in Apr-Jun 2019 and recover, which is geographic/population, not
+  instrumental. No drift correction is warranted on this evidence.
+- **Over-correcting BRA05**: the new run is 0.05-0.08 s more negative than the old
+  (which was corrected in May), not 0.167 s. Single application confirmed.
+- **The LOCGRID inset**: max depth is now exactly 25.200 km = the deepest TT node,
+  where the old run reached 25.599, i.e. 0.4 km beyond it. Working as intended.
+
+### F4. REVISED shipping position
+**Do not release depths from this run.** 46% of depths are boundary values, 43%
+even in the well-constrained subset, and those events' epicentres are pulled
+toward the deep-water stations by the same geometry. The defensible interim
+product is **epicentres and origin times**, with depth flagged
+`unresolved (grid face)` for z < 0.05 or z > 24.5 km, and the statement that the
+depth distribution is bimodal by construction. Present it as a **detection
+catalogue, not a located one**.
+
+### F5. What v2 needs (acceptance criteria, not just a task list)
+1. Un-shear to a **sea-level datum** using srModel.elevation + the 30 m Orca grid
+   inside its box + GEBCO outside, blended at the edge.
+2. **OBS at their true depths** (785-1943 m), rock fill above the seafloor. This
+   gives 0.8-1.9 km of grid ABOVE the seafloor, so a shallow caldera source can
+   finally sit above a deep-water station.
+3. **Vp/Vs sweep** (1.78 / 1.95 / 2.1 / 2.3) on a 2,000-event sample. 1.78 is
+   likely too low for the shallow edifice: far S late, near S early.
+4. **Acceptance test**: pinned fraction at the new top face (the sea surface)
+   near zero for in-network events; count of events located above the local
+   seafloor becomes a pick-quality metric.
+5. Cheap prior check: S-P at the nearest station gives an implied depth per event
+   with almost no model dependence. Do this before rebuilding anything.
