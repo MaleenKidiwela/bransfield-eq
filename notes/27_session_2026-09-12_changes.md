@@ -587,3 +587,21 @@ on the seafloor 1 km too deep.
 | H2 | ph2dt 9,517 → 8,992 (5.5% < MINOBS); 462,024 pairs; 4.17M observations | PASS |
 | H3 | IMOD=1; 22 layers 0–30.3 km monotonic; Vp 2.35–7.00; Vp/Vs 1.78; no water, no 200 sentinel | PASS |
 | H4 | reloc count, airquakes, shift vs NLLoc start, rct | pending |
+
+### I4. Observations during the run (before H4)
+- **Cluster structure: 23 clusters, one of 8,449 events (94%)**, next largest 55.
+  This is the single-big-cluster LSQR regime the repo's own notes flag as slow
+  (~5 days at 42k events). Smaller here, but expect hours, not minutes. If a 1D
+  baseline on the full tier proves too slow to iterate on, the proven fallback is
+  the existing pruned-backbone + sub-cluster approach (~15 min).
+- **2,069 distinct events warned "negative depth"** during the inversion — 23% of
+  the cluster, vs 871 that were clamped to the datum at input. So the inversion is
+  pushing ~1,200 events that *started* below the 1.0 km datum up above it. On a
+  rigid flat datum this is NOT the same as "in the water column": local seafloor
+  under the edifice is as shallow as 0.35 km BSL. The correct plausibility test at
+  H4 is `depth_bsl_km` against the **30 m local bathymetry**, exactly as script 40
+  does for NLLoc — not the flat-datum `physical` flag. Two candidate explanations
+  to weigh at H4: (a) the genuine shallow edifice population that NLLoc also
+  found; (b) a too-fast shallow 1D model biasing depths upward (the same "top
+  layer too fast" hypothesis raised earlier). DD cancels smooth model error for
+  close pairs, so (b) should be small; the local-bathymetry count decides.
