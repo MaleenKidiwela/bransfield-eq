@@ -98,10 +98,14 @@ def make_control(label: str, n_lay: int, tops, vps, vss,
     blocks = []
     D = f"{damp:.0f}"
     if with_xc:
+        # cc warm-up with SMALL POSITIVE weights: WTCC=-9 makes every cc weight negative
+        # (weighting.f) and skip.f then compacts the arrays permanently -> "CC = 0%" for the
+        # whole run (found 2026-09-13, notes/30). OBSCC stays 0: cluster1.f links on
+        # minobs_cc + minobs_ct, and OBSCC=8 would have required 16 obs per pair (1.5% of pairs).
         for _ in range(niter_ct):
-            blocks.append(f"  3     -9   -9    -999   -999   1.0    0.5    {wrct:.0f}    -999  {D}")
+            blocks.append(f"  3     0.01  0.01  -999   -999   1.0    0.5    {wrct:.0f}    -999  {D}")
         for _ in range(niter_cc):
-            blocks.append(f"  3     1.0   0.5    5      2    1.0    0.5    {wrct:.0f}      2   {D}")
+            blocks.append(f"  3     1.0   0.5    5      2    0.01   0.005  {wrct:.0f}      2   {D}")
     else:
         for _ in range(niter_ct):
             blocks.append(f"  5     -9   -9    -999   -999   1.0    0.5    {wrct:.0f}    -999  {D}")
@@ -165,7 +169,7 @@ hypoDD.src
 *
 *--- event clustering:
 * OBSCC OBSCT MINDIST MAXDIST MAXGAP
-   {0 if not with_xc else 8}     8    -999    -999    -999
+   0     8    -999    -999    -999
 *
 *--- solution control:
 * ISTART  ISOLV  IAQ  NSET    (ISTART=2: catalog hypocenters as trial sources.
