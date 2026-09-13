@@ -73,23 +73,35 @@ def write_velocity(csv_path: Path, run_dir: Path, datum_shift_km: float = 0.0,
 
 
 def make_control(label: str, n_lay: int, tops, vps, vss,
-                 with_xc: bool, niter_ct: int, niter_cc: int) -> str:
+                 with_xc: bool, niter_ct: int, niter_cc: int,
+                 damp: float = 200.0, iaq: int = 1,
+                 wrct: float = 6.0, wrct_last: float = 4.0, wdct_last: float = -999.0) -> str:
     """Build a hypoDD.inp using IMOD=1 (variable Vp/Vs per layer) so the water
     layer's near-zero Vs is handled correctly rather than being forced to
     Vp/1.78 (which would put S waves in water, a non-physical state)."""
     dt_cc = "dt.cc"
     # Reweighting schedule. Tags moved off the data line so the Fortran
     # free-format read sees exactly 10 numbers per row.
+    # DAMP, WRCT and WDCT used to be hard-coded (20 / 10,8 / -999,4). On the v4
+    # baseline DAMP=20 gave condition numbers of 1,151-6,181 against a user-guide
+    # target of ~40-80: two orders of magnitude under-damped, so LSQR fitted noise
+    # along the least-resolved direction (relative depth) and compressed the depth
+    # axis by 80% (dz slope -0.80 vs the starting locations). WRCT 10/8 is
+    # effectively no outlier rejection on picks associated with a 0.5 s tolerance
+    # (conventional 6 -> 4). WDCT=4 < MAXSEP=5 culled 21% of pairs mid-run,
+    # preferentially the sparse ends of the depth distribution. IAQ=0 kept
+    # 600-1,450 airquakes per iteration, clamped to the datum each pass.
     blocks = []
+    D = f"{damp:.0f}"
     if with_xc:
         for _ in range(niter_ct):
-            blocks.append("  3     -9   -9    -999   -999   1.0    0.5    10    -999  20")
+            blocks.append(f"  3     -9   -9    -999   -999   1.0    0.5    {wrct:.0f}    -999  {D}")
         for _ in range(niter_cc):
-            blocks.append("  3     1.0   0.5    5      2    1.0    0.5    9      2   20")
+            blocks.append(f"  3     1.0   0.5    5      2    1.0    0.5    {wrct:.0f}      2   {D}")
     else:
         for _ in range(niter_ct):
-            blocks.append("  5     -9   -9    -999   -999   1.0    0.5    10    -999  20")
-        blocks.append("  5     -9   -9    -999   -999   1.0    0.5    8      4    20")
+            blocks.append(f"  5     -9   -9    -999   -999   1.0    0.5    {wrct:.0f}    -999  {D}")
+        blocks.append(f"  5     -9   -9    -999   -999   1.0    0.5    {wrct_last:.0f}    {wdct_last:.0f}  {D}")
     nset = len(blocks)
     reweight_block = "\n".join(blocks)
     idat = 3 if with_xc else 2
@@ -133,7 +145,7 @@ hypoDD.src
 * ISTART  ISOLV  IAQ  NSET    (ISTART=1: catalog hypocenters as trial sources;
 *                              ISOLV=2: LSQR;
 *                              IAQ=0: keep shallow events instead of stopping)
-    1      2     0    {nset}
+    1      2     {iaq}    {nset}
 *
 *--- data weighting and re-weighting:
 * NITER  WTCCP  WTCCS  WRCC  WDCC  WTCTP  WTCTS  WRCT  WDCT DAMP
@@ -194,6 +206,14 @@ def main():
     ap.add_argument("--datum-shift-km", type=float, default=None,
                     help="seafloor datum used by script 22 (read from hypodd_datum.json if omitted)")
     ap.add_argument("--max-layers", type=int, default=30, help="hypoDD MAXLAY is 50")
+    ap.add_argument("--damp", type=float, default=200.0,
+                    help="LSQR damping. Tune until the log's CND is ~40-80. Was 20 (CND in the thousands).")
+    ap.add_argument("--iaq", type=int, default=1, choices=[0, 1],
+                    help="1 = remove airquakes (use for tuning); 0 = keep. Was 0.")
+    ap.add_argument("--wrct", type=float, default=6.0, help="catalogue residual cutoff, x std (sets 1..n-1). Was 10.")
+    ap.add_argument("--wrct-last", type=float, default=4.0, help="residual cutoff in the last set. Was 8.")
+    ap.add_argument("--wdct-last", type=float, default=-999.0,
+                    help="pair-distance cull (km) in the last set; -999 = none. Was 4 (< MAXSEP 5).")
     args = ap.parse_args()
 
     run_dir = REPO / "hypodd" / args.label
@@ -219,7 +239,11 @@ def main():
     print(f"  velocity model: {n_lay} layers (rock only), tops {tops[0]:.2f}-{tops[-1]:.2f} km, "
           f"Vp {min(vps):.2f}-{max(vps):.2f}")
     ctl = make_control(args.label, n_lay, tops, vps, vss,
-                       args.with_xc, args.niter_ct, args.niter_cc)
+                       args.with_xc, args.niter_ct, args.niter_cc,
+                       damp=args.damp, iaq=args.iaq, wrct=args.wrct,
+                       wrct_last=args.wrct_last, wdct_last=args.wdct_last)
+    print(f"  inversion: DAMP={args.damp:.0f}  IAQ={args.iaq}  WRCT={args.wrct:.0f}/{args.wrct_last:.0f}  "
+          f"WDCT(last set)={args.wdct_last:.0f}")
     (run_dir / "hypoDD.inp").write_text(ctl)
     print(f"Wrote {run_dir/'hypoDD.inp'}")
 

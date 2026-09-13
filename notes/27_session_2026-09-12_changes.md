@@ -673,3 +673,47 @@ and was **delivered to the user as files**: all `catalogs/*.csv` products, both
 movies, all grids. Everything disk-only is reproducible from what is committed:
 scripts 17f → discriminate_shots → 41 → 39 → 29/30 → 31 → 40 → 34 (NLLoc chain)
 and 22 → 23 → 24 → 50 (hypoDD chain), with the parameters recorded in this log.
+
+### I7. RETRACTION of I5's conclusion, and the damping sweep (Merlin review)
+**The DAMP=20 run is an ill-conditioned inversion and its output must not be
+used for relative geometry either.** Verified in `hypodd/year_v4_1d/hypoDD.log`:
+main-cluster condition numbers in the **thousands** against a user-guide target of
+~40–80 (two orders of magnitude under-damped); mean |DZ| of 1.8–5.1 km per
+iteration through set 2 (the depth axis reshuffled every pass, not converging);
+600–1,450 airquakes per iteration clamped to the datum with IAQ=0 (the Fortran
+fields run together at that magnitude). In this regime LSQR fits noise along the
+least-resolved direction — relative depth — and the −0.80 dz slope is
+**regression to the mean, not a measurement.** I5 §3 stood that run up as "for
+relative geometry"; withdrawn. The delivered file is renamed
+`hypodd_year_v4_1d_qc_RETRACTED_underdamped_DAMP20.csv`.
+
+My flat-datum explanation for the compression (I5) was **wrong in sign and ~50×
+too small**: with the datum at the median event water depth the pairwise error is
+~0.05 s per station per 5 km pair and pushes toward *expansion*.
+
+**NLLoc's depth ordering is real** (Merlin's model-light test on phase.dat:
+observed near-station S−P rises monotonically with NLLoc depth, 0.58 → 1.19 s,
+four times the pick noise; the DAMP=20 run flattened those events to a constant
+0.62–0.77 s). NLLoc's 6–12 km bins are probably **~1.5–2 km over-deep** (it
+over-predicts near S−P by ~0.2 s there) — a modest correction to check on the
+NLLoc side (Vp/Vs, top layer), not the 3 km the bad run implied.
+
+Also wrong-rather-than-limited in the DAMP=20 setup: WRCT 10/8 (effectively no
+outlier rejection on picks associated at 0.5 s tolerance; conventional 6→4);
+WDCT=4 < MAXSEP=5 (a mid-run cull that removed 21% of pairs and preferentially
+the sparse ends of the depth distribution); IAQ=0 with 7–17% airquakes per pass.
+The shallow-biased loss is partly inherent (few S, short chains) and partly these
+settings plus a datum at the *median* event seafloor that sits above the
+shallowest edifice population (local seafloor to 0.35 km BSL).
+
+**Kept from the run:** the seafloor rigid-shift datum (the only frame hypoDD's
+code allows) and script 50's local-bathymetry plausibility test.
+
+**Sweep launched:** DAMP ∈ {100, 200, 400, 800}, IAQ=1, WRCT 6/4, WDCT −999, same
+inputs, same datum, same ph2dt (one variable at a time; MINOBS/datum changes
+deferred). Script 24 now takes `--damp --iaq --wrct --wrct-last --wdct-last`; the
+first control file was gated (IAQ=1; DAMP in all 3 sets; no cull; WRCT 6/6/4)
+before the other three launched. Acceptance: CND ~40–80; dz-vs-depth slope well
+above −0.80; p90 depth close to NLLoc's; retention not collapsed. Then Merlin's
+discriminating test — forward-model dt.ct from the NLLoc locations through the same
+1D model, run the identical control, and see whether the depth spread survives.
