@@ -983,3 +983,36 @@ Consequences:
   NLLoc, so a small |slope| is no longer proof of agreement — the noisy synthetic runs
   give the expected slope under DAMP 400 for consistent data; the real slope minus
   that is the data–model signal.
+
+### I18. ISTART=2 results: synthetic gate PASSES; real data want a ~25% compression of the NLLoc depth axis
+All DAMP 400, IAQ 1, WRCT 6/4, same ph2dt inputs, start = NLLoc standard-tier locations.
+
+| run | reloc | slope (DD−start on start) | p90 start → DD | Spearman | median \|dz\| | rct final |
+|---|---|---|---|---|---|---|
+| synth0 noise-free | 8,444 (94%) | **+0.001** | 6.51 → 6.53 | 0.999 | 0.02 km | 1 ms |
+| synth1 σ 0.15 s | 7,986 (89%) | −0.014 | 6.61 → 6.61 | 0.986 | 0.08 | 212 ms |
+| synth2 σ 0.15 s + 5% outliers ±0.5 s | 7,935 (88%) | −0.023 | 6.62 → 6.64 | 0.984 | 0.09 | 259 ms |
+| **real dt.ct** | 6,783 (75%) | **−0.234** | 6.91 → 5.69 | 0.817 | 0.57 | 116 ms |
+
+Gate (slope ±0.05, p90 ±0.2 km) PASSES on the noise-free run. The inversion's own
+compression under realistic noise is −0.01 to −0.02; the real data give −0.23
+(−0.26 on events with ≥40 or ≥100 links) — **a data–model signal of ≈ −0.22, not an
+inversion artefact**. Binned: NLLoc 2–4 km → DD median dz −0.33 km; 4–6 → −0.64;
+6–9 → −1.54; 9–15 → −2.11; the 0–0.5 km events move DOWN +0.39 (start at the datum
+clamp). Direction and size agree with the model-light S−P test (I11: NLLoc depth axis
+stretched ~1.5–1.8×), which used no relocation at all. Two independent lines now say
+the same thing.
+
+Caveats: (1) damping at 400 pulls toward the start, so −0.23 is a lower bound on what
+the differential times want (DAMP 200/800 sensitivity running); (2) retention is
+depth-selective — 50% of the 0–0.5 km and 15–40 km starts are lost, 95–97% of the
+2–9 km — so the slope is on the well-connected core; (3) the reference frame is
+hypoDD's flat 1D model with a 1.0 km rigid seafloor shift; a bias in that model would
+shift the whole axis, not compress it. Initial RMSCT 193 ms (real) vs 4 ms (noise-free
+synthetic): the real differential times disagree with the NLLoc geometry at the
+~0.2 s level before any relocation.
+
+QC (script 50): 6,783 → 6,483 pass (57 above local seafloor, 247 with <20 links);
+QC-pass depth below local seafloor p10/50/90 0.37/2.41/5.34 km →
+`catalogs/hypodd_year_v4_1d_i2_damp400_qc.csv`. This supersedes every earlier
+hypoDD CSV (all ISTART=1); those are left on disk but must not be used.
