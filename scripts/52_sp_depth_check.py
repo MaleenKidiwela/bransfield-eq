@@ -23,10 +23,13 @@ REPO = Path(__file__).resolve().parent.parent
 R_EARTH = 6371.0
 
 
-def rock_model():
+def rock_model(vpvs: float | None = None):
+    """Rock-only 1D model. If `vpvs` is given, Vs = Vp / vpvs so every catalogue is
+    scored with the SAME ratio (positions-only comparison); otherwise the file's Vs."""
     vm = pd.read_csv(REPO / "configs" / "velocity_model.csv")
     r = vm[vm.vp_kms > 1.6].copy(); r["z_bsl"] = r.depth_km       # rock rows, below sea level
-    return r.z_bsl.values, r.vp_kms.values, r.vs_kms.values
+    vs = (r.vp_kms / vpvs).values if vpvs else r.vs_kms.values
+    return r.z_bsl.values, r.vp_kms.values, vs
 
 
 def path_avg_slowness(z_top, z_bot, z_grid, v):
@@ -67,6 +70,8 @@ def main() -> None:
     ap.add_argument("--max-sta-km", type=float, default=4.0)
     ap.add_argument("--restrict-to", help="CSV of event_idx to restrict to (e.g. NLLoc sigma_z<=0.5)")
     ap.add_argument("--label", default="")
+    ap.add_argument("--scorer-vpvs", type=float, default=None,
+                    help="fix the scorer Vp/Vs (e.g. Wadati 1.88) so runs differ only by positions")
     args = ap.parse_args()
 
     if args.catalog:
@@ -94,7 +99,7 @@ def main() -> None:
     m["epi_km"] = 2 * R_EARTH * np.arcsin(np.sqrt(np.sin((p2 - p1) / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dl / 2) ** 2))
     m = m[m.epi_km <= args.max_sta_km]
     m = m.sort_values("epi_km").groupby("event_idx").head(1)          # nearest station per event
-    zg, vp, vs = rock_model()
+    zg, vp, vs = rock_model(args.scorer_vpvs)
     z_sta = m.z_sta_bsl.values.clip(min=zg[0]); z_src = m.z_bsl.values.clip(min=zg[0])
     dz = m.z_bsl.values - m.z_sta_bsl.values
     R = np.sqrt(m.epi_km.values ** 2 + dz ** 2)
@@ -104,7 +109,7 @@ def main() -> None:
     m["zbin"] = pd.cut(m.z_bsl, bins)
     g = m.groupby("zbin", observed=True).agg(n=("misfit", "size"), sp_obs=("sp_obs", "median"),
                                               sp_pred=("sp_pred", "median"), misfit=("misfit", "median"))
-    print(f"\n=== {args.label or (args.catalog or args.hyp_dir)}  [{args.frame}]  n={len(m):,} events with a P+S station <{args.max_sta_km} km ===")
+    print(f"\n=== {args.label or (args.catalog or args.hyp_dir)}  [{args.frame}; scorer Vp/Vs {args.scorer_vpvs or 'file'}]  n={len(m):,} events with a P+S station <{args.max_sta_km} km ===")
     print(f"{'depth BSL bin':>15}{'n':>7}{'obs S-P':>10}{'pred S-P':>10}{'pred-obs':>10}")
     for b, r in g.iterrows():
         print(f"{str(b):>15}{r.n:>7.0f}{r.sp_obs:>10.3f}{r.sp_pred:>10.3f}{r.misfit:>+10.3f}")

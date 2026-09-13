@@ -863,3 +863,20 @@ pick times are epoch s, zero duplicate (event,station) pairs, obs S−P correlat
   both runs**, so positions alone are compared. Metric: does predicted S−P at the
   relocated depths track the observed 0.79 → 0.88 across 2–8 km? If yes, the stretch
   was Vp/Vs; if the predicted range stays ×3–4, it is the P model or the picks.
+
+### I13. Vp/Vs is NOT the stretch lever (positions-only test, scorer fixed at 1.88)
+NLLoc relocated the same 2,000-event sample at Vp/Vs 1.78 and 1.90 (ORCA_v4 grids,
+everything else identical); both scored with the scorer's Vp/Vs fixed at 1.88.
+
+| run | pred spread | obs spread | median misfit | median |misfit| |
+|---|---|---|---|---|
+| 1.78 | ×3.48 | ×2.77 | −0.050 s | 0.227 |
+| 1.90 | ×3.64 | ×2.82 | −0.143 s | 0.240 |
+
+The predicted depth range did not compress (×3.5 → ×3.6) and the fit got slightly
+worse. By Merlin's criterion this is "the P model or the picks, not Vp/Vs".
+**Keep Vp/Vs at 1.78** (Wadati 1.795 agrees). Next velocity lever: the top ~2 km of
+rock too fast (the tomography's starting-model fill at the top node). Test: slow
+Vp 10% in the top 2 km below the *local* seafloor of ORCA_v4, rebuild TT grids,
+relocate the same sample, score at 1.88. If the predicted range compresses toward
+×2.8, the stretch is the shallow P model; if not, it is in the picks.
