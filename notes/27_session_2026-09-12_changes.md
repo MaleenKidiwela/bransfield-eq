@@ -210,3 +210,85 @@ clean, but **nothing enforces it**.
    with `srModel.elevation`, put OBS at true depth) is **not implemented**.
 4. **Vp/Vs = 1.78 everywhere**, including ~2 km of sediment where 2-3 is normal.
 5. Whether the new velocity discretisation actually improves locations — untested.
+
+---
+
+## E. v1 locations — results and what to distrust
+
+Run 2026-09-13. Full chain on the new picks, no older product reused.
+
+| stage | events |
+|---|---|
+| association | 98,631 |
+| airgun window excluded | −18,848 |
+| into NLLoc | 79,783 |
+| located | 79,773 |
+| loose / standard / **strict** | 7,675 / 6,324 / **2,152** |
+
+### E1. The airgun window is excluded, not filtered
+Shots fire every **17.7 s** (p10 16.2, p90 19.3), so a ±9 s match window already
+spans the whole time axis and temporal matching saturates at 83% — it cannot
+separate shots from earthquakes. Tight matching (±2 s + 15 km) caught 6,219 of
+~17,000; Jan 21–25 still ran 1,161–1,994 events/day against a ~130/day baseline.
+Whole window (Jan 21 – Feb 5) dropped; events are **flagged, not deleted**.
+
+**What could be wrong:** ~1,800 genuine earthquakes are discarded with them. The
+window boundaries are the first and last shot ±1 h, which is a judgement call.
+
+### E2. Raw NLLoc output was 59.4% pinned to a grid face
+45.8% at the top (< 0.05 km), 13.6% at the bottom (25.2 km). **My velocity-grid
+rebuild is NOT the cause** — 2,000 events located twice, ORCA_v2 vs ORCA_v3
+travel times, everything else identical:
+
+    OLD grid (water top 1.456): 40.5% pinned, median 0.57 km
+    NEW grid (rock top 2.348):  40.8% pinned, median 0.57 km
+
+Like-for-like against the old pool at a strict cut (gap<140, ≥10 phases):
+
+    OLD picks: 11.3% pinned, median 3.46 km
+    NEW picks: 15.4% pinned, median 2.20 km
+
+So the new pool finds a large extra population of small events whose depths are
+not genuinely resolved. The depth-boundary test added to script 40 removes all of
+them: the QC'd catalogue is **0.0% pinned**, depths 1–8 km, median 3.1–3.3 km,
+consistent with Orca's shallow magma system (per the user — shallow seismicity is
+expected there and must not be assumed erroneous).
+
+**What could be wrong:** I have not shown the surviving shallow events are real
+rather than the shallow tail of a pinned population that merely cleared QC.
+
+### E3. The velocity model IS sheared — settled
+Three independent confirmations:
+1. Stingray's docs: *"The velocity model is hung from the elevation. This is
+   accomplished by shearing vertically the columns of nodes."*
+2. Data: depth of the 4 km/s contour vs water depth — slope **+0.007 km/km**
+   (would be ~+1.0 if sea-level referenced).
+3. Physics: that contour reaches 1.60 km where water reaches 1.96 km, which is
+   impossible in a sea-level frame.
+
+Stingray traced rays in true geometry, so **un-shearing is the correct inverse**,
+not a double correction. Script 38's "below seafloor" comment was right.
+
+### E4. v1 limitations — state these with the catalogue
+- **Depth datum is below a flat reference seafloor at ~1.3 km**, not below sea
+  level. Do not mix with any BSL product without converting.
+- **All 38 stations sit at z = 0** despite 785–1943 m of relief (sd 274 m), so the
+  array is flattened and absolute depths carry a bias correlated with water depth:
+  edifice events biased deep, basin events shallow, up to ~0.5 km.
+- **Embargoed claim:** anything comparing depths beneath the caldera with the
+  flanks, or any depth-vs-bathymetry relationship. That is the signal the bias
+  fakes. Epicentres, clustering, temporal behaviour and rates are usable.
+
+### E5. v2 — the un-shear
+Unblocked: GEBCO_2023 is on disk at
+`/home/jovyan/ooi/rsn_cabled/SummerSchool2025/global_ocean_data/GEBCO_2023.nc`
+(global 15-arcsec, covers all 38 stations); the 30 m Orca grid covers the srModel
+footprint. Build is a per-column interp, under a minute. **The validation is the
+work**: a shallow-water-OBS vs deep-water-OBS jackknife, which the inversion
+cannot game the way it can game a residual-slope test.
+
+### E6. Still open
+- 5M.BYE / 5M.TOW: the station A/B never completed. They remain the largest noise
+  sources (more raw picks than any OBS, 0.06% association rate).
+- Whether strict (2,152) is the right operating point now the depth test is active.
+- `--min-s` remains inert (hard-wired to `min_p`); tuning is still not possible.
