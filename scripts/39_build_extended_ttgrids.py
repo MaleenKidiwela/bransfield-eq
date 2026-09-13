@@ -49,9 +49,22 @@ def build_gtsrce(station_geom_csv: Path, picks_csv: Path) -> list[tuple[str, flo
         # Use bare station code if it's unambiguous (no collision across networks),
         # otherwise NET_STA.
         label = r.station
-        # depth: stations are at the surface (z=0) by NLLoc convention.
-        # NLLoc's elev arg in GTSRCE is positive-up. We use 0.
-        out.append((label, float(r.latitude), float(r.longitude), 0.0))
+        # TRUE station depth, positive DOWN, on a sea-level datum (ORCA_v4+).
+        # OBS sit on the seafloor (785-1943 m); land stations are above sea level
+        # so they take a negative depth. Placing everything at 0 flattened the
+        # array and made it impossible to locate a source above a deep-water OBS,
+        # which jammed Orca's shallow events onto the grid's top face.
+        # NB GTSRCE LATLON fields are: lat lon DEPTH ELEV. Putting the depth in
+        # the elev slot would place an OBS ~1.4 km INTO THE AIR.
+        if bool(r.get("on_seafloor", False)) and float(r.water_depth_m or 0) > 0:
+            depth_km = float(r.water_depth_m) / 1000.0
+        else:
+            # Clamp at 0: the grid starts at sea level, so a station ABOVE it
+            # cannot be placed and Grid2Time silently fails for it (this cost 10
+            # land stations on the first attempt). Max elevation here is 30 m,
+            # i.e. <=10 ms of error on 2% of picks.
+            depth_km = max(0.0, -float(r.elevation_m or 0.0) / 1000.0)
+        out.append((label, float(r.latitude), float(r.longitude), depth_km))
     return out
 
 
@@ -97,7 +110,7 @@ def main() -> None:
 
     tasks = []
     for label, lat, lon, depth in sta_list:
-        gtsrce = f"GTSRCE {label} LATLON {lat:.4f} {lon:.4f} 0.0 {depth:.1f}"
+        gtsrce = f"GTSRCE {label} LATLON {lat:.6f} {lon:.6f} {depth:.4f} 0.0"
         text = CONTROL_TEMPLATE.format(
             model_root=str(model_root.relative_to(REPO)),
             tt_root=str(tt_root.relative_to(REPO)),
@@ -109,9 +122,18 @@ def main() -> None:
         results = list(ex.map(run_one_station, tasks))
     failed = [lbl for lbl, rc in results if rc != 0]
     if failed:
-        print(f"FAILED stations: {failed}")
-    else:
-        print("all stations ok")
+        print(f"FAILED stations (nonzero rc): {failed}")
+    # Grid2Time can return 0 and still write nothing (e.g. a station outside the
+    # grid), so check the actual files rather than the return code. This silently
+    # dropped 10 land stations on the first ORCA_v4 attempt while printing "ok".
+    built = {h.name.split(".")[2]
+             for h in (REPO / "nlloc" / "time").glob(f"{args.prefix}.P.*.time.hdr")}
+    wanted = {t[0] for t in tasks}
+    missing = sorted(wanted - built)
+    if missing:
+        raise SystemExit(f"Grid2Time produced no grid for {len(missing)} "
+                         f"station(s): {missing}")
+    print(f"all {len(wanted)} stations ok")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ GRID_LAYOUTS = {
     "ORCA":    dict(nx=301, ny=201, nz=126, x0=-29.8, y0=-20.0,  dx=0.2),
     "ORCA_v2": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
     "ORCA_v3": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
+    "ORCA_v4": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
 }
 
 
@@ -39,8 +40,16 @@ def build_gtsrce(station_geom_csv: Path, available: set[str]) -> str:
     for _, r in st.iterrows():
         if r.station not in available:
             continue
+        # TRUE depth, positive down, sea-level datum. See the note in script 39:
+        # fields are lat lon DEPTH ELEV, and every station was previously pinned
+        # to 0.0 regardless of its 785-1943 m water depth.
+        if bool(getattr(r, "on_seafloor", False)) and float(r.water_depth_m or 0) > 0:
+            depth_km = float(r.water_depth_m) / 1000.0
+        else:
+            # Clamp at 0 -- see the note in script 39.
+            depth_km = max(0.0, -float(r.elevation_m or 0.0) / 1000.0)
         lines.append(f"GTSRCE {r.station} LATLON  "
-                     f"{r.latitude:.4f} {r.longitude:.4f} 0.0 0.0")
+                     f"{r.latitude:.6f} {r.longitude:.6f} {depth_km:.4f} 0.0")
     return "\n".join(lines)
 
 
