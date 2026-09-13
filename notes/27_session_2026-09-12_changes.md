@@ -605,3 +605,50 @@ on the seafloor 1 km too deep.
   found; (b) a too-fast shallow 1D model biasing depths upward (the same "top
   layer too fast" hypothesis raised earlier). DD cancels smooth model error for
   close pairs, so (b) should be small; the local-bathymetry count decides.
+
+### I5. Gate H4 and post-H4 findings — hypoDD 1D baseline DONE, with a clear role
+Run: 8,449-event main cluster, 15 LSQR iterations, 17 minutes.
+| gate/check | result |
+|---|---|
+| H4 | PASS — 8,992 → 7,296 relocated (18.9% lost); ids unique; all join to NLLoc start; rct 0.231 s; nctp/ncts p50 336/400 |
+| physical (30 m local bathymetry) | 59 events (0.81%) > 0.2 km above their seafloor → flagged |
+| links | 200 events (2.7%) with < 20 catalogue links → flagged (the 10 that moved > 10 km had a median of **3** links) |
+| **QC pass** | **7,044 (96.5%)** → `catalogs/hypodd_year_v4_1d_qc.csv`; depth below local seafloor p10/50/90 0.42/2.24/3.30 km |
+
+New script `50_hypodd_qc.py` does this reproducibly (flags added to the full CSV,
+subset written separately). hypoDD's own `physical` flag tests the flat datum and
+is the wrong criterion; `physical_local` is the one to use.
+
+**Loss is biased against the shallow population.** Dropped events: median start
+depth 0.53 km below seafloor vs 1.90 for kept; 49% shallow (bsf < 0.5) vs 31%.
+Also fewer phases (10 vs 12), wider gap (154° vs 124°). hypoDD drops poorly-linked
+events and the shallow edifice events are the least well recorded. **The
+relocated catalogue under-represents exactly the shallow population the user
+cares about.** A limitation to state, not a bug.
+
+**hypoDD and NLLoc disagree on depth at the km level, systematically.**
+| set | NLLoc p10/50/90 | hypoDD p10/50/90 | median shift |
+|---|---|---|---|
+| all 7,296 | 1.02 / 2.92 / 7.33 | 1.38 / 3.21 / 4.36 | −0.07 km |
+| strict tier only (2,212) | 1.57 / 3.92 / 7.23 | 1.84 / 3.31 / 4.10 | **−0.55 km** |
+Compression is concentrated where NLLoc was uncertain (|dz| 2.05 km at σ_z > 1.5
+vs 0.51 at σ_z ≤ 0.5) — that is DD collapsing a weak tail, expected. But even the
+strict tier compresses (p90 7.2 → 4.1 km), so this is not only noise. Mechanism
+consistent with the flat datum: pairs up to MAXSEP = 5 km apart span > 1 km of
+bathymetric relief across the caldera, so the flattened-station error does NOT
+cancel between them, and DD on a 1D model has weak depth leverage in the top km.
+
+**Role of each product (state this with the catalogue):**
+- **NLLoc v4** (3D, un-sheared, true station depths, per-event σ) → absolute
+  positions and depths. The depth product.
+- **hypoDD 1D** → relative geometry within clusters (fault planes, lineations,
+  fine structure). Do **not** quote its absolute depths over NLLoc's.
+This is the reason a hybrid (relative geometry anchored to absolute frame) exists;
+the old `32_hybrid_catalog.py` did it with a wrong join key and no datum
+conversion, and is not reused.
+
+Not traced: the 2,069 mid-run "negative depth" warnings — hypoDD rewrites its log
+at the end and my regex found none afterwards. Final state is what matters and is
+characterised above (0 above the flat datum; 59 above the local seafloor).
+
+Not done in this pass: dt.cc (new correlator), IMOD=9 experiment, any hybrid.
