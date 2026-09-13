@@ -1093,3 +1093,31 @@ scale (the origin node column reads Vp 1.99 at z=1.0, the BRA19 column 1 km away
 seafloor gradient biases times fast. Remedy under test: 1.0 km lateral core (±20 km),
 0.2 km vertical nodes to 4 km (59×59×37 nodes; binary rebuilt for 80×80×40), same frozen
 test + script 57. Acceptance: median offset within ±20 ms and per-station spread collapsed.
+
+### I21. ROOT-CAUSE CANDIDATE FOR THE DEPTH STRETCH: NLLoc's Grid2Time travel-time grids are 60–160 ms too slow
+Found while validating the hypoDD 3D model: hypoDD-3D P times were −125 ms vs NLLoc's
+grids everywhere, and refining the node model (1 km / 0.2 km) did not change that
+(−116 ms). So the difference is not in hypoDD. Tests, all on the ORCA_v4 grid:
+1. NLLoc's own P TIME grid vs the slowness integral straight down the velocity column
+   under each station (script 58 / inline): **+66 ms median, station-specific −5 … +134 ms
+   (BRA21 −5, BRA23 +32, BRA19 +91, BRA18 +108, BRA15 +134), constant with depth** from
+   1.6 km down (BRA19: +80 ± 1 ms at z = 1.6 … 4.4 km). Land stations +60–78 ms.
+2. `Time_3d_NLL.c` (NLLoc's Podvin–Lecomte): "hs[][][] describe (constant) slownesses in
+   cells" — the node-value model is applied to the cell BELOW each node, i.e. shifted
+   0.2 km down. Re-integrating the column with that convention removes the median
+   (+66 → +11 ms) but not the station spread (std 27 ms).
+3. Independent solver: pykonal point-source FMM on a 121×121×41 sub-grid around BRA19
+   (`58_eikonal_check.py`): pykonal − column −1 … −11 ms (legitimately faster oblique
+   first arrivals); **NLLoc FD − pykonal +137 ms median (MAD 19) on 4,954 real rays,
+   growing with distance: +108 (0–2 km), +143 (2–5), +144 (5–10), +161 ms (10–25 km)**;
+   hypoDD-3D − pykonal **+6.5 ms (MAD 8.5)**. Two independent forward solvers agree with
+   each other and with the model; Grid2Time does not.
+Consequences: every NLLoc catalogue (v1–v4) was located with travel times ~0.1–0.16 s too
+slow, station- and distance-dependent, and S inherited it ×1.78 (S = P·Vp/Vs in LOCMETH).
+That is the kind of error that stretches the depth axis. The hypoDD-3D model is
+vindicated (it disagreed with NLLoc because NLLoc was wrong).
+Fix: `59_build_eikonal_ttgrids.py` — pykonal FMM per station on the full 576×451×64
+grid → `ORCA_v5.P.<STA>.time` with identical headers; gate per station: column offset
+< 15 ms at 3/6/10 km. Then: relocate the 2,000-event sample with ORCA_v5 and score S−P
+spread (the ×3.5 vs ×2.8 test) BEFORE the full-year re-run; if it collapses toward
+observed, rerun the year (v5), QC, movie, hypoDD 1D/3D on v5.
