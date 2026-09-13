@@ -21,6 +21,14 @@ REPO = Path(__file__).resolve().parent.parent
 ST = REPO / "catalogs" / "station_geometry.csv"
 BATHY = REPO / "notes" / "figures" / "Orca_bathymetry.nc"
 
+# Grid extents keyed by travel-time prefix. These were hardcoded to the ORCA v1
+# grid, so on the 230 x 180 km v2/v3 grid the boundary test flagged nearly every
+# real event as edge-pinned.
+GRID_EXTENTS = {
+    "ORCA":    ((-29.8, 30.2), (-20.0, 20.0)),
+    "ORCA_v2": ((-150.0, 80.0), (-110.0, 70.0)),
+    "ORCA_v3": ((-150.0, 80.0), (-110.0, 70.0)),
+}
 GX_MIN, GX_MAX = -29.8, 30.2
 GY_MIN, GY_MAX = -20.0, 20.0
 
@@ -28,6 +36,9 @@ GY_MIN, GY_MAX = -20.0, 20.0
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only_no_shots")
+    ap.add_argument("--tt-prefix", default="ORCA", choices=sorted(GRID_EXTENTS.keys()))
+    ap.add_argument("--map-pad-km", type=float, default=8.0,
+                    help="zoom the map to the events plus this margin")
     ap.add_argument("--out", default=None)
     ap.add_argument("--bin-days", type=float, default=2.0)
     ap.add_argument("--fps", type=int, default=15)
@@ -40,6 +51,8 @@ def main() -> None:
         REPO / "notes" / "figures" / f"nlloc_animation_{args.label}.mp4")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    global GX_MIN, GX_MAX, GY_MIN, GY_MAX
+    (GX_MIN, GX_MAX), (GY_MIN, GY_MAX) = GRID_EXTENTS[args.tt_prefix]
     df = pd.read_csv(REPO / "catalogs" / f"nlloc_{args.label}.csv")
     df["t"] = pd.to_datetime(df.origin_time, utc=True)
     on_boundary = ((df.nlloc_x_km - GX_MIN < 0.5) | (GX_MAX - df.nlloc_x_km < 0.5) |
