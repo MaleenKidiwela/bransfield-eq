@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
-SRC, DST = "ORCA_v4", "ORCA_v5"
+SRC, DST = "ORCA_v4", "ORCA_v5"          # overridable with --src/--dst (module globals used by the workers)
 
 
 def read_grid(prefix):
@@ -43,19 +43,19 @@ def tri(g, org, sp, p):
     return v
 
 
-def one_station(sta: str, refine: int = 2) -> str:
+def one_station(sta: str, refine: int = 2, src: str = SRC, dst: str = DST) -> str:
     """refine=2: solve on a 0.2 km trilinear upsample of the model, then keep every 2nd node.
     At the native 0.4 km the first-order FMM is up to 60 ms FAST at some stations (BRA20 -60,
     BRA23 -52 ms vs the column integral); at 0.2 km BRA20 is +5 ms. Verified 2026-09-13."""
     import pykonal
     from scipy.ndimage import zoom
     t0 = time.time()
-    slow, org, sp, _ = read_grid(REPO / "nlloc" / "model" / f"{SRC}.P.mod"); vp = (sp[0] / slow).astype(np.float64)
+    slow, org, sp, _ = read_grid(REPO / "nlloc" / "model" / f"{src}.P.mod"); vp = (sp[0] / slow).astype(np.float64)
     if refine > 1:
         vp = zoom(vp, refine, order=1); sp_s = sp / refine
     else:
         sp_s = sp
-    _, _, _, thdr = read_grid(REPO / "nlloc" / "time" / f"{SRC}.P.{sta}.time")
+    _, _, _, thdr = read_grid(REPO / "nlloc" / "time" / f"ORCA_v4.P.{sta}.time")   # station line + dims from the v4 headers
     hx, hy, hz = map(float, thdr[1].split()[1:4])
     solver = pykonal.solver.PointSourceSolver(coord_sys="cartesian")
     solver.vv.min_coords = org; solver.vv.node_intervals = sp_s; solver.vv.npts = vp.shape
@@ -69,7 +69,7 @@ def one_station(sta: str, refine: int = 2) -> str:
     del solver, vp
     if not np.all(np.isfinite(tt)):
         return f"{sta}: FAIL non-finite travel times ({(~np.isfinite(tt)).sum()} nodes)"
-    out = REPO / "nlloc" / "time" / f"{DST}.P.{sta}.time"
+    out = REPO / "nlloc" / "time" / f"{dst}.P.{sta}.time"
     tt.tofile(str(out) + ".buf")
     Path(str(out) + ".hdr").write_text("\n".join(thdr))          # identical header (dims, station, TRANS)
     # gate: vertical column
@@ -87,14 +87,17 @@ def main():
     ap.add_argument("--stations", nargs="*", default=None, help="default: every station with a v4 grid")
     ap.add_argument("--workers", type=int, default=5, help="refine=2 needs ~7 GB per worker")
     ap.add_argument("--refine", type=int, default=2)
+    ap.add_argument("--src", default=SRC, help="velocity model prefix (nlloc/model/<src>.P.mod)")
+    ap.add_argument("--dst", default=DST, help="time-grid prefix to write")
     a = ap.parse_args()
-    stations = a.stations or sorted(p.name.split(".")[2] for p in (REPO / "nlloc" / "time").glob(f"{SRC}.P.*.time.hdr"))
+    stations = a.stations or sorted(p.name.split(".")[2] for p in (REPO / "nlloc" / "time").glob("ORCA_v4.P.*.time.hdr"))
     for ext in ("hdr", "buf"):
-        src = REPO / "nlloc" / "model" / f"{SRC}.P.mod.{ext}"; dst = REPO / "nlloc" / "model" / f"{DST}.P.mod.{ext}"
-        if not dst.exists(): shutil.copy(src, dst)
-    print(f"{len(stations)} stations, {a.workers} workers; model {SRC} -> time grids {DST}")
+        srcf = REPO / "nlloc" / "model" / f"{a.src}.P.mod.{ext}"; dstf = REPO / "nlloc" / "model" / f"{a.dst}.P.mod.{ext}"
+        if a.src != a.dst and not dstf.exists(): shutil.copy(srcf, dstf)
+    print(f"{len(stations)} stations, {a.workers} workers; model {a.src} -> time grids {a.dst}")
+    n = len(stations)
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
-        for msg in ex.map(one_station, stations, [a.refine] * len(stations)):
+        for msg in ex.map(one_station, stations, [a.refine] * n, [a.src] * n, [a.dst] * n):
             print("  " + msg, flush=True)
 
 

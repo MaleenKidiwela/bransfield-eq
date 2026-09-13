@@ -1189,3 +1189,29 @@ position allows), and the strict-tier stretch remains attributable to the veloci
 proper (shallow structure / Vp/Vs), not to the solver. Launched: full-year NLLoc v5
 (16 shards, control identical to v4 except label/prefix — gated by diff) → 31 → 40; and
 the first full hypoDD IMOD=9 run (fine model, ISTART 2, DAMP 400) on the v4 standard tier.
+
+### I25. Year v5 (pykonal grids) and the first full hypoDD 3D relocation
+**NLLoc year v5**: 16 shards, 25 min wall (Grid2Time-era runs took hours), 79,783 hyps =
+obs (gate 2), 79,773 parsed, 227 non-LOCATED dropped. Tiers: loose 8,552 / standard 6,902 /
+strict 1,576 (v4: 11,682 / 9,517 / 2,278). On the 79,236 events located in both: rms p50
+0.266 → 0.272 s, pinned (z<0.05) 30.8 → 35.3%, depth p50 1.05 → 0.80 km. 2,839 v4-standard
+events fall out of v5-standard: 43% on gap ≥ 180 (they moved), ~55% on the seafloor test
+(shallower in v5), 1% rms, 1% pinned. Standard-tier depth BSL p10/50/90 1.04/2.55/7.74 →
+0.97/2.81/8.63 km. v5 is the forward-model-consistent catalogue and supersedes v4, but it
+is NOT a fix for the shallow-depth problem — it sharpens it.
+Residual-vs-distance on the sample (script 61 parse): pinned events show near (0–4 km) P
+−0.17/−0.22 s and S −0.30 (observed early), 4–15 km P +0.12/+0.07 and S +0.16/+0.20
+(late), far land 60–200 km P −0.15 / S +0.29; pinned events carry 793 far-station P picks
+vs 1,134 for 2.6× more unpinned events → the pinned quarter is mostly events outside the
+OBS array controlled by distant land stations, i.e. the population QC already removes.
+Unpinned events show the same sign pattern at ¼ amplitude (near P −0.045, 4–8 km +0.05):
+the model has too little near-vs-mid moveout contrast → a velocity-structure issue, not a
+solver one. Next controlled test: a FASTER top (Vp ×1.15 in the top 2 km below the local
+seafloor, the opposite of I15's ORCA_v4slow), pykonal grids, same sample, same gates.
+**hypoDD 3D (IMOD=9, fine node model, v4 standard-tier starts, ISTART 2, DAMP 400)**:
+8,448 trial sources, 8,244 relocated (92%), RMSCT 193 → 72 ms, CND 140 → 119, slope
+−0.171 (1D: −0.234), Spearman 0.85, p90 7.55 → 6.32 km, median |dz| 0.55 km. QC: 1,102
+(13%) end above the local seafloor (no datum clamp in 3D) and 260 poorly linked → 6,923
+pass; depth below local seafloor p10/50/90 0.05/2.38/5.21 km. Movie
+`notes/figures/hypodd3d_animation_year_v4_3d_i2_damp400_qc.mp4` delivered. The same 3D
+chain on the v5 standard tier is running (`hypodd/year_v5_3d`).
