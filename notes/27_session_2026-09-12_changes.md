@@ -1016,3 +1016,29 @@ QC (script 50): 6,783 → 6,483 pass (57 above local seafloor, 247 with <20 link
 QC-pass depth below local seafloor p10/50/90 0.37/2.41/5.34 km →
 `catalogs/hypodd_year_v4_1d_i2_damp400_qc.csv`. This supersedes every earlier
 hypoDD CSV (all ISTART=1); those are left on disk but must not be used.
+
+### I19. Damping sensitivity (ISTART=2) and the hypoDD 3D (IMOD=9) build
+DAMP 200 (CND 327→247, i.e. under-damped by the manual's 40–80): 6,474 relocated (72%),
+slope −0.275, p90 6.90→5.48 km, Spearman 0.78 — same picture as DAMP 400 (−0.234), slightly
+stronger with less damping, as expected if the data want the compression. DAMP 800 ran
+1 h 22 min without finishing (second time; the earlier ISTART=1 attempt hung 55 min) and was
+killed by PID. Closing the sweep at 200/400.
+
+3D mode. hypoDD 2.1b IMOD=9 = simul2000 pseudo-bending tracer on a trilinear NODE model.
+Built a separate binary (`~/HypoDD_3d_build/src/hypoDD_3d`, gfortran from
+`~/.conda/envs/gf`) with `vel3d.inc` 60×60×30 nodes; identical to the production binary on
+the 1D frozen case (RMSCT 4 ms). Two source facts that would have silently broken the run:
+- `getdata.f` sets negative station elevations to 0 unless IMOD=5 → in 3D mode every OBS
+  would have sat at SEA LEVEL (1.5–1.9 km above the seafloor). Patched in the 3D build only:
+  `imod.ne.5.and.imod.ne.9`; `partials_3d.f` already places the receiver at z = −elev.
+  (Flagged by Merlin before its session hit the rate limit; confirmed in source.)
+- `ray_3d.f setup`: path divisions nd capped at 7 → ≤129 ray points regardless of SCALE1,
+  so long land rays cannot overflow `rp(3,130)`; SCALE1 set to 0.5 km (finest z spacing).
+Model (`56_build_hypodd_3dmodel.py`): ORCA_v4 → 37×37×23 nodes (2.5 km core ±25 km, graded
+to ±450 km padding; z −3…400 km with 0.5 km steps to 4 km), Vp/Vs 1.78 grid (IPHA=2),
+nodes projected through hypoDD's own setorg/dist (`hypodd_proj_driver.f`; frame verified
+x east / y north / rot anticlockwise, so rot 0 and origin −62.4413/−58.44). Self-checks:
+origin node = grid value; no NaN; core lateral std 0.68 km/s at 1 km depth. Inputs on the
+sea-level datum with true station depths (`22 --datum-shift-km 0` → `hypodd/year_v4_3d`,
+8,992 events, 461,852 pairs). First test: frozen run (DAMP 1e6, 1 iteration, main cluster)
+→ initial RMSCT of the NLLoc locations under the 3D model, to compare with 1D's 193 ms.
