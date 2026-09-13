@@ -936,3 +936,50 @@ depth stretch. The loss is at association (raw → catalogue drops ~30 points): 
 third of analyst-confirmed picks never enter an event. Land-station S is weak
 (60%, MAD 100 ms) but only 124 picks. Output: `catalogs/manual_pick_recall_year_newpool.csv`
 (one row per manual pick with hit_raw/hit_cat/residual).
+
+### I17. Synthetic hypoDD test exposes a control-file error: every run started at the cluster CENTROID (ISTART=1)
+Sequence, so the reasoning can be audited:
+1. TauPy table on the hypoDD 22-layer model passed its 3 self-checks (0.25×0.1 km grid
+   blew a 40-min timeout; rebuilt at 1×0.25 km, interpolation error ≤ 3 ms beyond 2 km,
+   p90 15–26 ms inside 2 km). Synthetic dt.ct (462,024 pairs, 4.17 M rows) agrees with
+   the observed differential times at corr 0.76 (P) / 0.81 (S).
+2. Noise-free synthetic run, DAMP 400, identical control: **FAILED the gate** — slope of
+   (DD−start) on start depth −0.415, p90 6.71→5.97 km, yet final rct 13 ms. Noisy
+   (0.15 s) run: slope −0.18. hypoDD reported RMSCT 110 ms after iteration 1 on data
+   that were consistent with the start locations.
+3. Chased the forward model first (wrong lead, ~1 h): built `scripts/hypodd_tt_driver.f`
+   around hypoDD's own `ttime/refract/direct1/delaz2` objects (gfortran installed
+   into `~/.conda/envs/gf`; binary at `hypodd/_synth_tables/tt_driver`). Over 300k real
+   pair rows the synthetic dt and hypoDD's own dt agree to −0.4 ms median, 12 ms RMS.
+   Side finding: hypoDD's `ttime` returns the refracted intercept time at zero offset
+   without a critical-distance check (−17 ms vs the vertical direct time at 2 km depth,
+   −13 ms at 5 km, 0 at 10 km). Small, but it is a depth-dependent bias of hypoDD's own
+   1D model at the closest stations — the ones that constrain depth.
+4. Frozen run (DAMP 1e6, 1 iteration, main cluster) on the noise-free data: RMSCT
+   **283 ms** and hypoDD.res shows residual == observed dt for 100% of 4.13 M rows,
+   i.e. predicted dt = 0. `dtres.f`: `if (nsrc.eq.1) dt_res = dt_dt`. `trialsrc.f`:
+   `istart.eq.1` → ONE trial source at the cluster centroid. Log: "Initial trial
+   sources = 1". **Script 24 wrote ISTART=1 with a comment claiming it meant "catalog
+   hypocenters as trial sources"; the opposite is true (ISTART=2).**
+5. Frozen run with ISTART=2: "Initial trial sources = 8449", RMSCT **4 ms**, nothing
+   moves (residual rms 5.3 ms, median −0.5 ms, p90 8.7 ms). Synthetic chain validated
+   end to end; the failure in (2) was the centroid start.
+
+Consequences:
+- Every hypoDD result in this log (I7–I9, DAMP 20/100/200/400, the RETRACTED QC file,
+  the "depth compression slope −0.53", the damping-leakage reading) was a relocation
+  from the cluster centroid, damped toward the centroid. NLLoc depths entered only as
+  the label to compare against. The −0.53 slope is therefore not a statement about
+  the differential times vs NLLoc — it is largely the damped inversion failing to
+  rebuild the depth spread from a single point (the noise-free synthetic reproduces
+  it: −0.415 from perfect data).
+- The 1D hypoDD depth conclusions are withdrawn. The NLLoc S−P depth-stretch finding
+  (I11) is independent of hypoDD and stands.
+- Fix: `24_run_hypodd.py --istart` (default 2), control comment corrected, gate on the
+  generated line (default writes `2 2 IAQ NSET`, override writes `1 …`). Relaunched:
+  synth0/1/2 and the real data (`year_v4_1d_i2_damp400`, fresh dir from the ph2dt
+  outputs) with ISTART=2, DAMP 400, IAQ 1. Evaluation via `55_synth_eval.py`.
+- Open question for the real run: with the start now at NLLoc, damping pulls toward
+  NLLoc, so a small |slope| is no longer proof of agreement — the noisy synthetic runs
+  give the expected slope under DAMP 400 for consistent data; the real slope minus
+  that is the data–model signal.
