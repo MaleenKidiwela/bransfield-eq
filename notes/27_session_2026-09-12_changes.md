@@ -895,3 +895,44 @@ at 0.4 km resolution but should be clipped if this grid is ever used for product
 
 The 1.78-scored version of the Vp/Vs test (bvfxsists) agrees with the 1.88-scored
 one — same ×3.5 → ×3.6 non-result — so I13's conclusion is stable across scorer ratio.
+
+### I15. Top-layer test result: slowing the shallow P model does NOT compress the depth axis
+Same 2,000 events, scorer fixed at Vp/Vs 1.88:
+
+| grid | pred spread | obs spread | median misfit | top-pinned | depth p50/p90 |
+|---|---|---|---|---|---|
+| ORCA_v4 | ×3.48 | ×2.77 | −0.050 s | 24.2% | 1.55 / 19.0 km |
+| ORCA_v4slow (top 2 km Vp ×0.9) | ×3.44 | ×2.85 | −0.076 s | 21.8% | 1.75 / 18.5 km |
+
+Unchanged within noise. Velocity levers eliminated so far: hypoDD damping (I9),
+Vp/Vs (I13), shallow P speed (this). Remaining suspects: the deeper P model (a
+whole-column speed change, not just the top 2 km) and the picks themselves. The
+synthetic dt.ct test (script 51; TauPy table still building) addresses the hypoDD
+side; the manual-pick recall below addresses the pick-timing side.
+
+### I16. Manual-pick recall against the new pool (`54_manual_pick_recall.py`)
+First run reported "45,581 outside the deployment -> 0 usable". Cause: my own
+`epoch()` helper used `.astype("int64")/1e9` — the documented pandas-3 unit trap
+(microseconds, 1000× wrong) that the whole pipeline had already been cleaned of.
+Fixed to `timeutil.epoch_seconds`; second crash was a pandas `.cat` accessor name
+clash on a column called `cat`. Both fixed; results below (match tolerance 0.5 s,
+manual picks deduplicated, BRA05 −0.167 s applied to the manual picks too).
+
+RAW = pick exists in `picks_pn_diting ∪ picks_pnlight_obs` on that station-day;
+CAT = the matched pick made it into an associated event (`pyocto_picks_year_newpool_no_shots`).
+
+| subset | n | P raw / cat | S raw / cat | P bias, MAD | S bias, MAD |
+|---|---|---|---|---|---|
+| all manual (46,339) | 18,572 P / 27,767 S | 77.6% / 52.1% | 90.9% / 48.8% | −16 ms, 30 | 0 ms, 37 |
+| trusted window ≥ 2019-10-01 | 4,474 / 6,956 | **86.7% / 62.7%** | **93.1% / 57.0%** | −8 ms, 23 | +11 ms, 34 |
+| earlier (< 2019-10-01) | 14,098 / 20,811 | 74.8% / 48.7% | 90.2% / 46.1% | −19 ms, 31 | −6 ms, 38 |
+| land stations (5M/AI) | 135 / 124 | 68.1% / 46.7% | 60.5% / 24.2% | −30 ms, 70 | −10 ms, 100 |
+
+Per station (trusted window, ≥100 picks): RAW recall 85% (BRA23) – 95% (BRA19);
+catalogue recall 51% (BRA26, BRA27) – 77% (BRA18). Reading: the pickers find the
+analyst's picks (trusted-window raw recall matches the benchmark 89/96%), and
+timing bias is ≤ 20 ms with MAD 23–37 ms — pick *timing* cannot produce a 1.5–1.8×
+depth stretch. The loss is at association (raw → catalogue drops ~30 points): a
+third of analyst-confirmed picks never enter an event. Land-station S is weak
+(60%, MAD 100 ms) but only 124 picks. Output: `catalogs/manual_pick_recall_year_newpool.csv`
+(one row per manual pick with hit_raw/hit_cat/residual).
