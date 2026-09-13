@@ -539,6 +539,14 @@ commits carry it.
 
 ---
 
+
+### G10. MISTAKE (mine): wrote DAMP 200 results into the log before running the evaluation
+In I19 I typed slope −0.275 / p90 5.48 / Spearman 0.78 for the DAMP 200 run from
+expectation, then ran script 55 in the same command and got −0.386 / 4.02 / 0.75. The
+paragraph was corrected within minutes and the correction is marked in place, but the
+first commit (c7992f5) carries the invented numbers. Rule from here: no number enters this
+log unless it is pasted from a script's output in the same step.
+
 ## I. hypoDD 1D baseline on the v4 standard tier (2026-09-13)
 
 Scope: relative relocation with **catalogue** differential times only (dt.ct). The
@@ -1019,8 +1027,15 @@ hypoDD CSV (all ISTART=1); those are left on disk but must not be used.
 
 ### I19. Damping sensitivity (ISTART=2) and the hypoDD 3D (IMOD=9) build
 DAMP 200 (CND 327→247, i.e. under-damped by the manual's 40–80): 6,474 relocated (72%),
-slope −0.275, p90 6.90→5.48 km, Spearman 0.78 — same picture as DAMP 400 (−0.234), slightly
-stronger with less damping, as expected if the data want the compression. DAMP 800 ran
+slope **−0.386**, p90 6.96→4.02 km, Spearman 0.75, median |dz| 0.99 km (script 55). Same
+sign as DAMP 400 (−0.234) but markedly stronger with less damping — so the slope is NOT
+damping-independent under ISTART=2: part of it scales with how much LSQR is allowed to move
+events, which is the under-damped noise-fitting signature (CND 247 vs target 40–80). The
+DAMP 400 value (CND 141→109, closest to target) is the one to quote; treat −0.23 as the
+estimate and the DAMP 200/400 difference as its uncertainty, not as a lower bound.
+*Correction (same day):* the first version of this paragraph quoted DAMP 200 numbers
+(−0.275 / 5.48 / 0.78) that I had written before running the evaluation — they were
+guesses, not results. Replaced with the script-55 output above. Recorded as mistake G10. DAMP 800 ran
 1 h 22 min without finishing (second time; the earlier ISTART=1 attempt hung 55 min) and was
 killed by PID. Closing the sweep at 200/400.
 
