@@ -1057,3 +1057,39 @@ origin node = grid value; no NaN; core lateral std 0.68 km/s at 1 km depth. Inpu
 sea-level datum with true station depths (`22 --datum-shift-km 0` → `hypodd/year_v4_3d`,
 8,992 events, 461,852 pairs). First test: frozen run (DAMP 1e6, 1 iteration, main cluster)
 → initial RMSCT of the NLLoc locations under the 3D model, to compare with 1D's 193 ms.
+
+### I20. Frozen 3D test: tracer fast (71 s/iteration) but the coarse node model is ~125 ms FAST vs NLLoc
+Frozen IMOD=9 run (DAMP 1e6, 1 iteration, main cluster, 8,448 trial sources, SCALE1 0.5):
+71 s wall for the whole iteration → a full 15-iteration 3D run costs ~20 min, not hours.
+RMSCT 236 ms (1D: 193 ms). That number alone proves nothing: NLLoc's own per-event rms is
+0.15/0.20/0.27 s (p25/50/75), so ~0.2 s differential residuals are expected under any
+model close to NLLoc's. The direct test is `57_compare_3d_tt.py`: hypoDD's per-ray times
+(hypoDD.src, 65,803 source–station rays, 29 stations) against NLLoc's ORCA_v4 P time grids
+at the same points (S grids do not exist on disk — NLLoc scaled P):
+
+| subset | hypoDD-3D − NLLoc P (median / MAD / p90\|.\|) |
+|---|---|
+| all | −125.5 / 43.9 / 230 ms |
+| OBS 0–3 km | −112 / 37 / 223 |
+| OBS 6–10 km | −154 / 44 / 246 |
+| OBS 40–100 km | −67 / 74 / 207 |
+| depth 0–1.5 km BSL | −162 / 64 / 282 |
+| depth 9–15 km | −107 / 27 / 176 |
+
+Per station −201 (BRA18) … +17 ms (BRA03): systematic, station-specific, present even at
+0–3 km range and for deep sources → the hypoDD model is faster than NLLoc's in the shallow
+column under each OBS. Checks that exonerate the other suspects:
+- Registration: NLLoc's own station x/y/z (time-grid headers) vs script 41's `stingray_xy`
+  agree to ≤ 15 m within 5 km of Orca (BRA19 −0.602/0.781 vs −0.605/0.784); 0.47 km at
+  BRA03 (75 km) — a tmerc-vs-SIMPLE drift inside NLLoc itself, ≈0.6% of range, noted.
+  Model water depth under each OBS matches the true depth (BRA19 1.098 vs 1.084 km).
+- Tracer: `hypodd_path_driver.f` (ray_3d.o + get_vel3d.o in isolation), vertical ray
+  3.0 → 1.084 km through the origin node column: 0.5380 s vs slowness integral 0.5368 s
+  (+1.2 ms). The driver segfaults on its second `path` call (state hypoDD's main sets up
+  that the driver does not); one ray per process is enough for spot checks.
+Diagnosis: 2.5 km lateral nodes point-sample a shallow structure that varies on a 1–2 km
+scale (the origin node column reads Vp 1.99 at z=1.0, the BRA19 column 1 km away reads
+2.06 at 1.2 and 3.18 at 1.6), and linear-in-velocity interpolation across the steep
+seafloor gradient biases times fast. Remedy under test: 1.0 km lateral core (±20 km),
+0.2 km vertical nodes to 4 km (59×59×37 nodes; binary rebuilt for 80×80×40), same frozen
+test + script 57. Acceptance: median offset within ±20 ms and per-station spread collapsed.

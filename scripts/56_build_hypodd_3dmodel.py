@@ -30,11 +30,15 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 ORIGIN_LAT, ORIGIN_LON = -62.4413, -58.44        # NLLoc TRANS SIMPLE origin (script 41)
 
-FINE = np.arange(-25.0, 25.01, 2.5)
-XY_NODES = np.unique(np.concatenate([[-450, -200, -140, -100, -75, -55, -42, -32],
-                                     FINE, [32, 42, 55, 75, 100, 140, 200, 450]]))
-Z_NODES = np.array([-3.0, -1.0, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0,
-                    7.0, 8.0, 10.0, 12.0, 15.0, 18.0, 22.0, 26.0, 40.0, 400.0])
+def node_design(core_half: float, core_step: float, z_step: float, z_fine_max: float):
+    """Graded node set. All values must be multiples of bld=0.1 km (get_vel3d.f)."""
+    fine = np.arange(-core_half, core_half + 1e-6, core_step)
+    outer = np.array([o for o in (25, 32, 42, 55, 75, 100, 140, 200, 450) if o > core_half + core_step / 2])
+    xy = np.unique(np.round(np.concatenate([-outer[::-1], fine, outer]), 1))
+    zf = np.arange(z_step, z_fine_max + 1e-6, z_step)
+    deep = np.array([z for z in (4.5, 5.0, 5.5, 6.0, 7.0, 8.0, 10.0, 12.0, 15.0, 18.0, 22.0, 26.0, 40.0, 400.0) if z > z_fine_max + 1e-6])
+    z = np.unique(np.round(np.concatenate([[-3.0, -1.0, 0.0], zf, deep]), 1))
+    return xy, z
 
 
 def read_nlloc_grid(prefix: Path):
@@ -74,7 +78,17 @@ def main():
     ap.add_argument("--vpvs", type=float, default=1.78)
     ap.add_argument("--out", default=None)
     ap.add_argument("--driver", default=str(REPO / "hypodd" / "_synth_tables" / "proj_driver"))
+    ap.add_argument("--core-half", type=float, default=25.0, help="half-width of the fine core (km)")
+    ap.add_argument("--core-step", type=float, default=2.5, help="lateral node spacing in the core (km)")
+    ap.add_argument("--z-step", type=float, default=0.5, help="vertical node spacing down to --z-fine-max (km)")
+    ap.add_argument("--z-fine-max", type=float, default=4.0)
     a = ap.parse_args()
+    XY_NODES, Z_NODES = node_design(a.core_half, a.core_step, a.z_step, a.z_fine_max)
+    FINE = XY_NODES[np.abs(XY_NODES) <= a.core_half + 1e-6]
+    for arr in (XY_NODES, Z_NODES):
+        assert np.allclose(arr * 10, np.round(arr * 10)), "nodes must be multiples of bld=0.1 km"
+    assert len(XY_NODES) <= 80 and len(Z_NODES) <= 40, f"binary built for 80x80x40 nodes: {len(XY_NODES)} {len(Z_NODES)}"
+    print(f"node design: {len(XY_NODES)} xy nodes (core +-{a.core_half} km @ {a.core_step}), {len(Z_NODES)} z nodes (step {a.z_step} to {a.z_fine_max} km)")
     from importlib import import_module
     s41 = import_module("41_build_unsheared_velgrid")
     vp, org, sp = read_nlloc_grid(REPO / "nlloc" / "model" / f"{a.src_prefix}.P.mod")
@@ -101,7 +115,7 @@ def main():
           f"({'OK' if abs(V[i0, j0, k0]-ref) < 1e-3 else 'FAIL'})")
     # 2: monotone-ish with depth on average, no NaN, plausible range
     prof = V[i0, j0, :]
-    print(f"  check 2  origin profile z={list(zn[:12])} ->\n           Vp={np.round(prof[:12], 2).tolist()}")
+    print(f"  check 2  origin profile z={np.round(zn[:14],2).tolist()} ->\n           Vp={np.round(prof[:14], 2).tolist()}")
     print(f"  check 3  NaN: {np.isnan(V).sum()}  range {V.min():.2f}-{V.max():.2f} km/s  "
           f"({'OK' if np.isnan(V).sum() == 0 and V.min() > 1.3 and V.max() < 8.5 else 'FAIL'})")
     # 3: lateral heterogeneity in the fine core at 1 km depth (should exist), far field ~1D
