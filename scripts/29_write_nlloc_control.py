@@ -79,6 +79,7 @@ LOCGAU2 0.01 0.05 2.0
 LOCPHASEID P P p
 LOCPHASEID S S s
 LOCQUAL2ERR 0.1 0.5 1.0 2.0 99999.9
+{delays}
 """
 
 
@@ -86,6 +87,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="picker_only_no_shots")
     p.add_argument("--vpvs", type=float, default=1.78)
+    p.add_argument("--delays", default=None,
+                   help="file of LOCDELAY lines (station P/S time delays, s, positive = station late; NLLoc subtracts them from the observed times). Default: none")
     p.add_argument("--tt-prefix", default="ORCA_v3",
                    choices=sorted(GRID_LAYOUTS.keys()))
     args = p.parse_args()
@@ -115,6 +118,7 @@ def main() -> None:
         tt_root=tt_root,
         out_root=out_root,
         vpvs=args.vpvs,
+        delays=(Path(args.delays).read_text().rstrip() if args.delays else "# no LOCDELAY"),
         **layout,
     )
     run_dir = REPO / "nlloc" / "run"

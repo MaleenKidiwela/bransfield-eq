@@ -1263,3 +1263,15 @@ independent solvers) with the depth caveat, and **hypoDD 3D on v5** for relative
    sample gates (24.2–24.3% on v4); the measured value is authoritative. I16's "benchmark
    89/96%" refers to the picker-benchmark set (notes/24), not to the recall table.
 Notes/28 is the clean methods/status document; notes/27 remains the audit trail.
+
+### I29. Domain constraint from the user (2026-09-13 evening) + v6 plan
+The Stingray P tomography is honestly resolved only to ~4 km below the seafloor; deeper
+values are extrapolated toward the 1D starting model. Consistent with VELEST (notes/29):
+absolute Vp below ~4 km unresolved, absorbed by station terms. Consequence for the final
+catalogue: lean on the P model where it is resolved, carry the rest with station terms
+(P and S LOCDELAY), and treat depths > ~6 km BSL as model-dependent in the write-up.
+v6 = ORCA_v5 pykonal grids + station P/S delays. Delays start from VELEST invA (station
+corrections only, hypocentres and the 1.78 start model fixed — the run whose frame matches
+NLLoc's), then iterate NLLoc's own per-station median residuals (script 65) on the
+2,000-event sample; gates after each iteration (scripts 61/60/52); the year runs only if
+the S−P spread ratio moves toward 1.0 and pinning does not grow.
