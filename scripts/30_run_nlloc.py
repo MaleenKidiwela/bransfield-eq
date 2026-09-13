@@ -39,9 +39,22 @@ def split_obs(obs_path: Path, n: int, work_dir: Path) -> list[Path]:
 def write_shard_control(template: str, label: str, shard_idx: int,
                         shard_obs: Path, shard_out_dir: Path) -> Path:
     shard_out_dir.mkdir(parents=True, exist_ok=True)
+    # These substitutions are string matches on the template's LOCFILES line. If the
+    # template has been hand-edited to a different obs path they silently do nothing,
+    # and EVERY shard then runs the FULL catalogue -- 16x the work, and the per-shard
+    # output no longer matches the round-robin split that script 31 relies on to map
+    # results back to event_idx. Verify rather than assume.
     text = template.replace(f"nlloc/obs/{label}.obs", str(shard_obs.relative_to(REPO)))
+    if str(shard_obs.relative_to(REPO)) not in text:
+        raise SystemExit(
+            f"shard {shard_idx}: could not substitute the obs path.\n"
+            f"  expected the template to reference 'nlloc/obs/{label}.obs'\n"
+            f"  template LOCFILES: "
+            + next((l for l in template.splitlines() if l.startswith("LOCFILES")), "<none>"))
     text = text.replace(f"nlloc/output/{label}/loc",
                         str((shard_out_dir / "loc").relative_to(REPO)))
+    if str((shard_out_dir / "loc").relative_to(REPO)) not in text:
+        raise SystemExit(f"shard {shard_idx}: could not substitute the output path")
     p = REPO / "nlloc" / "run" / f"{label}_shard_{shard_idx:02d}.in"
     p.write_text(text)
     return p

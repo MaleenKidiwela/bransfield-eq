@@ -28,6 +28,7 @@ GRID_EXTENTS = {
     "ORCA":    ((-29.8, 30.2), (-20.0, 20.0)),
     "ORCA_v2": ((-150.0, 80.0), (-110.0, 70.0)),
     "ORCA_v3": ((-150.0, 80.0), (-110.0, 70.0)),
+    "ORCA_v4": ((-150.0, 80.0), (-110.0, 70.0)),
 }
 GX_MIN, GX_MAX = -29.8, 30.2
 GY_MIN, GY_MAX = -20.0, 20.0
@@ -37,6 +38,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only_no_shots")
     ap.add_argument("--tt-prefix", default="ORCA", choices=sorted(GRID_EXTENTS.keys()))
+    ap.add_argument("--depth-datum", default=None, choices=["seafloor", "sealevel"],
+                    help="datum of depth_km in the catalogue. Default: read the "
+                         "'depth_datum' column written by script 31; error if absent. "
+                         "v1-v3 (sheared grids) are 'seafloor'; ORCA_v4+ is 'sealevel'.")
     ap.add_argument("--map-pad-km", type=float, default=8.0,
                     help="zoom the map to the events plus this margin")
     ap.add_argument("--out", default=None)
@@ -86,7 +91,24 @@ def main() -> None:
         bounds_error=False, fill_value=np.nan,
     )
     df["seafloor_km"] = sf_interp(np.c_[df.lat, df.lon])
-    df["depth_bsl_km"] = df.depth_km + df.seafloor_km
+    # The conversion below is only right for a BELOW-SEAFLOOR catalogue (v1-v3, the
+    # sheared grids). ORCA_v4+ is un-sheared and already below sea level; adding the
+    # bathymetry again would plot every event ~1.3 km too deep. Resolve the datum
+    # explicitly rather than assume.
+    datum = args.depth_datum
+    if datum is None:
+        if "depth_datum" in df.columns and df["depth_datum"].nunique() == 1:
+            datum = str(df["depth_datum"].iloc[0])
+        else:
+            raise SystemExit("cannot determine depth datum: pass --depth-datum "
+                             "seafloor|sealevel (catalogue has no depth_datum column)")
+    if datum == "seafloor":
+        df["depth_bsl_km"] = df.depth_km + df.seafloor_km
+    elif datum == "sealevel":
+        df["depth_bsl_km"] = df.depth_km
+    else:
+        raise SystemExit(f"unknown depth datum {datum!r}")
+    print(f"depth datum: {datum}  (cross-section axis is below sea level)")
 
     lon_min, lon_max = -58.7, -58.2
     lat_min, lat_max = -62.55, -62.35

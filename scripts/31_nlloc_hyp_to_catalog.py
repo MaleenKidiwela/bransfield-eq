@@ -119,7 +119,18 @@ def _collect_hyps_in_obs_order(out_dir: Path) -> list[Path]:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="picker_only_no_shots")
+    p.add_argument("--tt-prefix", default=None,
+                   help="travel-time grid prefix the run used; sets depth_datum")
+    p.add_argument("--depth-datum", default=None, choices=["seafloor", "sealevel"],
+                   help="datum of depth_km. Sheared v1-v3 grids (ORCA, ORCA_v2, ORCA_v3) "
+                        "are 'seafloor'; the un-sheared ORCA_v4+ is 'sealevel'. Written as "
+                        "a column so downstream consumers cannot double-convert.")
     args = p.parse_args()
+    if args.depth_datum is None:
+        if args.tt_prefix is None:
+            raise SystemExit("pass --tt-prefix (or --depth-datum) so the catalogue records "
+                             "its depth datum")
+        args.depth_datum = "sealevel" if args.tt_prefix >= "ORCA_v4" else "seafloor"
 
     out_dir = REPO / "nlloc" / "output" / args.label
     ordered_hyps = _collect_hyps_in_obs_order(out_dir)
@@ -156,8 +167,17 @@ def main() -> None:
             "sigma_x_km", "sigma_y_km", "sigma_z_km",
             "semi_minor_km", "semi_major_km", "az_max_horunc_deg",
             "rms_s", "n_phases", "gap_deg", "dist_km",
-            "nlloc_x_km", "nlloc_y_km", "nlloc_z_km"]
+            "nlloc_x_km", "nlloc_y_km", "nlloc_z_km",
+            # nlloc_status was being parsed but DROPPED here by this whitelist, so the
+            # v1 catalogue had no status column and script 40's REJECTED filter silently
+            # did nothing. Keep it, and stamp the datum.
+            "nlloc_status", "depth_datum"]
+    nlloc["depth_datum"] = args.depth_datum
     nlloc = nlloc[[c for c in cols if c in nlloc.columns]]
+    if "nlloc_status" not in nlloc.columns:
+        raise SystemExit("nlloc_status missing from parsed output -- parse_hyp regressed")
+    n_rej = int((nlloc.nlloc_status != "LOCATED").sum())
+    print(f"  depth_datum={args.depth_datum}   non-LOCATED solutions kept+flagged: {n_rej:,}")
     out_csv = REPO / "catalogs" / f"nlloc_{args.label}.csv"
     nlloc.to_csv(out_csv, index=False)
     print(f"wrote {out_csv}")

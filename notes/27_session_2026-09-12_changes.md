@@ -366,3 +366,65 @@ catalogue, not a located one**.
    seafloor becomes a pick-quality metric.
 5. Cheap prior check: S-P at the nearest station gives an implied depth per event
    with almost no model dependence. Do this before rebuilding anything.
+
+---
+
+## G. v2 (ORCA_v4) — un-shear, the sharding bug I introduced, and the datum trap
+
+### G1. Un-shear built and validated (commit 854a173)
+`41_build_unsheared_velgrid.py`: sea-level datum, water column filled with local
+top rock velocity, bathymetry from the Orca 30 m grid (35,947 nodes) + GEBCO_2023
+(223,650 nodes). Validated against `station_geometry.csv`: mean |diff| **13 m**,
+max 38 m. Stations at TRUE depths (BRA09 1.943 km, BRA25 0.896 km; land clamped
+to 0). Acceptance on 2,000 events, sheared vs un-sheared:
+
+    all events         48.4% -> 31.4% pinned
+    gap<180, rms<0.5   38.4% -> 15.7%
+    gap<140, rms<0.3   20.7% ->  5.4%   median depth 2.42 -> 3.67 km
+
+### G2. Vp/Vs settled at 1.78 — two independent ways, NOT by sweeping
+Wadati regression on the picks (479 events, r2>0.95): **1.795**, with a modest
+shallow excess (1.86–1.90 where nearest-station S–P < 1 s). The sweep was a trap:
+1.78→2.30 took pinning 24.1%→2.9% **while RMS rose 0.236→0.302**. Less pinning by
+fitting worse. Merlin's criterion (pinning down AND rms down) fails, so the S
+model is not implicated. P-only relocation confirmed it: dropping all S made
+pinning WORSE (32.7% vs 24.2%) because S–P is what constrains depth.
+
+### G3. MISTAKE (mine): every shard ran the full catalogue
+I hand-edited the LOCFILES line of `nlloc/run/year_v4.in` with sed to the old obs
+filename. `30_run_nlloc.py` substitutes shard paths by matching the literal string
+`nlloc/obs/<label>.obs`; no match → no substitution → **all 16 shards located all
+79,783 events** (16x the work; 93,606 hyp files for 79,783 inputs). Caught by
+noticing per-shard hyp counts (~5,850) exceeding per-shard inputs (4,987). The
+output is quarantined under `nlloc/output/QUARANTINE_year_v4_fullobs_bug/`, not
+deleted. Script 30 now **refuses to start** if either substitution fails.
+I also reported this run as "launched" two hours before discovering it had
+crashed on a filename mismatch at the very first attempt. Two reporting failures
+on one run; both recorded.
+
+### G4. TRAP: the datum changed, and three consumers assumed the old one
+v1–v3 depths are **below seafloor**; ORCA_v4 depths are **below sea level**.
+- `34_animate_nlloc.py` line 89 adds local bathymetry to get BSL — correct for
+  v1–v3, would plot v4 events ~1.3 km too deep. Now datum-aware.
+- `40_filter_nlloc_reliable.py` strict tier tested `depth_km > 0.2` as "bsf>0.2" —
+  trivially true on a BSL catalogue, i.e. the test would silently stop doing
+  anything. Now computes bsf = depth − local water depth from the surface saved by
+  script 41.
+- `31_nlloc_hyp_to_catalog.py` now **stamps a `depth_datum` column** so no consumer
+  has to guess, and both 34 and 40 read it (or fail loudly if absent).
+
+### G5. FOUND: `nlloc_status` was parsed and then DROPPED
+Script 31's output `cols` whitelist did not include `nlloc_status`, so the status
+I added to `parse_hyp` never reached the v1 catalogue, and script 40's "drop
+non-LOCATED" filter — guarded by `if "nlloc_status" in df.columns` — **silently did
+nothing on v1**. The v1 QC tiers therefore still contain REJECTED solutions.
+Fixed: the column is now written and its absence is a hard error.
+
+### G6. What "no mistakes" means operationally from here
+Every stage is gated on a check that would catch the failure class it is prone to:
+1. relaunch → shard controls point at their own slice; 16 workers; output growing
+2. completion → per-shard hyp count == per-shard obs count (positional-mapping precondition)
+3. parse → row count, no orphans, `nlloc_status` and `depth_datum` present
+4. QC → 0% grid-face pinning in standard/strict; bsf computed on the right datum
+5. acceptance → v4 vs v1 pinning and depth distributions
+6. movie → a frame visually inspected, datum confirmed from the column

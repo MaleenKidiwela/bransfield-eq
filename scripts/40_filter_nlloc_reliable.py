@@ -31,9 +31,10 @@ GRID_LAYOUTS = {
     "ORCA":    ((-29.8, 30.2), (-20.0, 20.0)),
     "ORCA_v2": ((-150.0, 80.0), (-110.0, 70.0)),
     "ORCA_v3": ((-150.0, 80.0), (-110.0, 70.0)),
+    "ORCA_v4": ((-150.0, 80.0), (-110.0, 70.0)),
 }
 # Deepest travel-time node: ORCA 126 nodes x 0.2 km = 25.0; ORCA_v2 64 x 0.4 = 25.2.
-GRID_Z = {"ORCA": (0.0, 25.0), "ORCA_v2": (0.0, 25.2), "ORCA_v3": (0.0, 25.2)}
+GRID_Z = {"ORCA": (0.0, 25.0), "ORCA_v2": (0.0, 25.2), "ORCA_v3": (0.0, 25.2), "ORCA_v4": (0.0, 25.2)}
 
 
 def main() -> None:
@@ -41,6 +42,8 @@ def main() -> None:
     ap.add_argument("--label", default="picker_only_no_shots_v2_vpvs210")
     ap.add_argument("--tt-prefix", default="ORCA_v2",
                     choices=sorted(GRID_LAYOUTS.keys()))
+    ap.add_argument("--depth-datum", default=None, choices=["seafloor", "sealevel"],
+                    help="datum of depth_km. Default: the catalogue's depth_datum column.")
     ap.add_argument("--tier", default="standard",
                     choices=["loose", "standard", "strict"])
     args = ap.parse_args()
@@ -63,6 +66,34 @@ def main() -> None:
         if n_rej:
             print(f"  dropping {n_rej:,} non-LOCATED solutions")
         df = df[df.nlloc_status == "LOCATED"].copy()
+
+    # ---- depth below the LOCAL seafloor, for the strict tier's bsf test ----
+    # On the sheared v1-v3 grids depth_km already IS below-seafloor. On the un-sheared
+    # ORCA_v4+ grid depth_km is below SEA LEVEL, so 'depth_km > 0.2' would be trivially
+    # true and the test would silently stop doing anything. Compute bsf explicitly.
+    datum = args.depth_datum
+    if datum is None:
+        if "depth_datum" in df.columns and df["depth_datum"].nunique() == 1:
+            datum = str(df["depth_datum"].iloc[0])
+        else:
+            raise SystemExit("cannot determine depth datum: pass --depth-datum "
+                             "(catalogue has no depth_datum column)")
+    if datum == "seafloor":
+        df["depth_bsf_km"] = df.depth_km
+    elif datum == "sealevel":
+        wsurf = REPO / "nlloc" / "model" / f"{args.tt_prefix}.water_depth_km.npy"
+        if not wsurf.exists():
+            raise SystemExit(f"sealevel datum needs the water-depth surface {wsurf}")
+        w = np.load(wsurf)                       # (nx, ny) in Stingray km, from script 41
+        hdr = (REPO / "nlloc" / "model" / f"{args.tt_prefix}.P.mod.hdr").read_text().split()
+        hx0, hy0, hdx = float(hdr[3]), float(hdr[4]), float(hdr[6])
+        ii = np.clip(np.round((df.nlloc_x_km - hx0) / hdx).astype(int), 0, w.shape[0] - 1)
+        jj = np.clip(np.round((df.nlloc_y_km - hy0) / hdx).astype(int), 0, w.shape[1] - 1)
+        df["local_water_km"] = w[ii, jj]
+        df["depth_bsf_km"] = df.depth_km - df["local_water_km"]
+    else:
+        raise SystemExit(f"unknown depth datum {datum!r}")
+    print(f"  depth datum: {datum}   bsf median {df.depth_bsf_km.median():.2f} km")
 
     # Station-hull mask (ZX OBS convex hull)
     st = pd.read_csv(ST)
@@ -87,7 +118,7 @@ def main() -> None:
                 (df.sigma_x_km < 1.0) &
                 (df.sigma_y_km < 1.0) &
                 (df.sigma_z_km < 2.0) &
-                (df.depth_km > 0.2))
+                (df.depth_bsf_km > 0.2))   # below the LOCAL seafloor, datum-aware
 
     report(loose,    "loose    (gap<200, RMS<0.7, N>=4)")
     report(standard, "standard (gap<180, RMS<0.5, N>=6)")
