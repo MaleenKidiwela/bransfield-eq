@@ -87,9 +87,39 @@ def main() -> None:
         w = np.load(wsurf)                       # (nx, ny) in Stingray km, from script 41
         hdr = (REPO / "nlloc" / "model" / f"{args.tt_prefix}.P.mod.hdr").read_text().split()
         hx0, hy0, hdx = float(hdr[3]), float(hdr[4]), float(hdr[6])
-        ii = np.clip(np.round((df.nlloc_x_km - hx0) / hdx).astype(int), 0, w.shape[0] - 1)
-        jj = np.clip(np.round((df.nlloc_y_km - hy0) / hdx).astype(int), 0, w.shape[1] - 1)
-        df["local_water_km"] = w[ii, jj]
+        # Bilinear interpolation at the exact hypocentre, NOT nearest grid node. On the
+        # caldera walls the seafloor changes by hundreds of metres within one 0.4 km
+        # cell; nearest-node lookup let 67 events (0.7% of standard) sit >0.2 km above
+        # their true local seafloor while passing the test. Verified against the 30 m
+        # Orca bathymetry independently.
+        from scipy.interpolate import RegularGridInterpolator
+        gx = hx0 + np.arange(w.shape[0]) * hdx
+        gy = hy0 + np.arange(w.shape[1]) * hdx
+        fw = RegularGridInterpolator((gx, gy), w, method="linear",
+                                     bounds_error=False, fill_value=None)
+        xq = np.clip(df.nlloc_x_km.values, gx[0], gx[-1])
+        yq = np.clip(df.nlloc_y_km.values, gy[0], gy[-1])
+        coarse = fw(np.c_[xq, yq])
+        # Even bilinear on the 0.4 km surface left 49 events >0.2 km above the true
+        # seafloor (worst +0.28 km) on the caldera walls. Use the 30 m Orca bathymetry
+        # directly wherever it covers the event; the coarse surface only outside its
+        # footprint, where the basin floor is smooth and 0.4 km is adequate.
+        orca = REPO / "notes" / "figures" / "Orca_bathymetry.nc"
+        fine = np.full(len(df), np.nan)
+        if orca.exists():
+            import xarray as xr
+            o = xr.open_dataset(orca)
+            olat = np.asarray(o.latitude.values, float); olon = np.asarray(o.longitude.values, float)
+            oz = np.asarray(o["data"].values, float)
+            if oz.shape != (len(olat), len(olon)):
+                oz = oz.T
+            fo = RegularGridInterpolator((olat, olon), np.clip(-oz / 1000.0, 0.0, None),
+                                         bounds_error=False, fill_value=np.nan)
+            fine = fo(np.c_[df.lat.values, df.lon.values])
+        n_fine = int(np.isfinite(fine).sum())
+        df["local_water_km"] = np.where(np.isfinite(fine), fine, coarse)
+        print(f"  local seafloor: {n_fine:,} events from 30 m Orca bathymetry, "
+              f"{len(df) - n_fine:,} from the 0.4 km surface")
         df["depth_bsf_km"] = df.depth_km - df["local_water_km"]
     else:
         raise SystemExit(f"unknown depth datum {datum!r}")
@@ -108,8 +138,16 @@ def main() -> None:
 
     print(f"input: {n:,} events ({args.label})")
 
-    loose    = ~df.on_boundary & (df.gap_deg < 200) & (df.rms_s < 0.7) & (df.n_phases >= 4)
-    standard = ~df.on_boundary & (df.gap_deg < 180) & (df.rms_s < 0.5) & (df.n_phases >= 6)
+    # Physical plausibility: an event ABOVE the local seafloor is in the water column
+    # and cannot be an earthquake. On the un-sheared v4 grid 25% of the standard tier
+    # (2,842 events) had bsf < 0; they carry rms 0.298 vs 0.199 and an artificially
+    # tight sigma_z 0.30 vs 0.77 - a forced minimum, i.e. picks inconsistent with any
+    # sub-seafloor source. Tolerance is half a grid cell (0.4 km / 2), the resolution
+    # at which NLLoc can place a hypocentre against the seafloor; strict uses +0.2.
+    SEAFLOOR_TOL_KM = 0.2
+    below_seafloor = df.depth_bsf_km > -SEAFLOOR_TOL_KM
+    loose    = ~df.on_boundary & below_seafloor & (df.gap_deg < 200) & (df.rms_s < 0.7) & (df.n_phases >= 4)
+    standard = ~df.on_boundary & below_seafloor & (df.gap_deg < 180) & (df.rms_s < 0.5) & (df.n_phases >= 6)
     strict   = (~df.on_boundary &
                 df.in_hull &
                 (df.gap_deg < 120) &
@@ -120,8 +158,8 @@ def main() -> None:
                 (df.sigma_z_km < 2.0) &
                 (df.depth_bsf_km > 0.2))   # below the LOCAL seafloor, datum-aware
 
-    report(loose,    "loose    (gap<200, RMS<0.7, N>=4)")
-    report(standard, "standard (gap<180, RMS<0.5, N>=6)")
+    report(loose,    "loose    (gap<200, RMS<0.7, N>=4, bsf>-0.2)")
+    report(standard, "standard (gap<180, RMS<0.5, N>=6, bsf>-0.2)")
     report(strict,   "strict   (gap<120, RMS<0.3, N>=8, σ<1/1/2 km, hull, bsf>0.2)")
 
     chosen = {"loose": loose, "standard": standard, "strict": strict}[args.tier]

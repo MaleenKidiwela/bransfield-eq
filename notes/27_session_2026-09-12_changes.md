@@ -453,3 +453,78 @@ record must say what actually happened. The `rm` did NOT recurse into instance
 A's new `nlloc/output/year_v4/` (its "Directory not empty" error is the rmdir at
 the end hitting A's live directory by path); A's files all postdate 06:57 and
 Gate 2 is the definitive check of A's completeness. Empty quarantine dirs removed.
+
+---
+
+## H. v2 FINAL — ORCA_v4 located catalogue, all gates passed (2026-09-13)
+
+| gate | check | result |
+|---|---|---|
+| 1 | each shard control reads its own slice; 16 workers | PASS |
+| 2 | per-shard hyp count == obs count, all 16 shards | PASS — 79,783 == 79,783, 0 mismatches |
+| 3 | parse: rows, unique, no orphans, status + datum columns | PASS — 79,773 rows; 340 REJECTED flagged; datum=sealevel |
+| 4 | QC: 0 REJECTED, 0% grid-face pinned, bsf on right datum | PASS — standard 11,376; strict 2,277 |
+| 5 | v4 beats v1 pinning at every matched cut | PASS |
+| 6 | movie frame inspected, datum from column | see below |
+
+### Acceptance numbers (raw catalogues, matched cuts)
+| cut | v1 pinned | v4 pinned | v1 med z (bsf) | v4 med z (bsl) |
+|---|---|---|---|---|
+| all | 59.4% | 42.7% | 0.24 | 1.07 |
+| gap<180 rms<0.5 N≥6 | 42.3% | **16.1%** | 0.29 | 1.20 |
+| gap<140 rms<0.3 N≥10 | 15.4% | **4.4%** | 2.20 | 2.98 |
+| gap<120 rms<0.3 N≥8 | 16.4% | **4.3%** | 2.00 | 2.86 |
+
+### Gate 6 (visual) caught two QC gaps, both fixed before release
+**Gap 1 — water-column events.** The first movie frame showed a dense band of
+events above the seafloor line. The standard tier tested "not pinned at a grid
+face" but never "below the local seafloor". Quantified: **25.0% of standard
+(2,842 events) had bsf < 0**, 16.2% clearly so. Those events carried rms 0.298 vs
+0.199 and an artificially tight σ_z 0.30 vs 0.77 — a forced minimum, the same
+signature as pinning on the sheared grid: picks inconsistent with any
+sub-seafloor source. Merlin had named exactly this count as the v2 pick-quality
+metric. Added `depth_bsf_km > -0.2` (half a 0.4 km grid cell) to loose and
+standard; strict already required bsf > +0.2.
+
+**Gap 2 — bathymetry lookup too coarse.** An *independent* recheck against the
+30 m Orca bathymetry (different data source from script 41's surface) still found
+**67 standard events > 0.2 km above their exact local seafloor** after Gap 1 was
+closed. Cause: QC read the seafloor at the nearest 0.4 km grid node, and on the
+caldera walls the seafloor changes by hundreds of metres within one cell
+(0.35–1.69 km BSL across the caldera strip). Bilinear interpolation of the same
+0.4 km surface only reduced it to 49 (worst +0.28 km) — the surface itself is the
+limit. Fix: QC now reads the 30 m Orca bathymetry directly wherever it covers the
+event (49,095 of 79,433 events), and the 0.4 km surface only outside its
+footprint, where the basin floor is smooth. Re-verified: **0 events above the
+seafloor by > 0.2 km in any tier.**
+
+Why the movie still shows points above the black line: the section draws the
+**median** seafloor across the latitude strip and a gray min–max envelope; a
+caldera-floor event (seafloor 1.69 km) legitimately plots above the median
+(~1.3 km). Per-event bsf is the authoritative test, not the 2-D projection.
+
+### FINAL QC tiers (catalogs/nlloc_year_v4_{loose,standard,strict}.csv)
+- **loose 11,682** — 0 above seafloor by >0.2 km; 1,261 (11.0%) within 0–0.2 km of it
+- **standard 9,517** (v1: 6,324) — bsf median ~1.4 km; σ_z 0.73; rms 0.203;
+  **988 (10.6%) within 0–0.2 km of the seafloor** — at the seafloor to within grid
+  resolution, not demonstrably below it. State this if the standard tier is used.
+- **strict 2,278** (v1: 2,152) — bsf 0.53/**2.93**/6.33 km; σ_z 0.78; rms 0.170;
+  every event ≥ 0.2 km below the seafloor
+- all tiers: 0% grid-face pinned, 0 REJECTED, `depth_datum=sealevel` stamped
+
+The standard tier is 50% larger than v1's because events the sheared grid jammed
+onto z=0 now have real interior depths. Its shallow population — p10 at the
+seafloor, median ~1.4 km below it — is the Orca shallow system, measured rather
+than truncated.
+
+### Still open (not blocking)
+- 5M.BYE / 5M.TOW exclusion never A/B-tested on the corrected catalogue
+- `--min-s` still inert in the associator (hard-wired to `min_p`)
+- Vp/Vs shallow excess (1.86–1.90 for near paths vs 1.78 model) is real but small; not applied
+- relative relocation (hypoDD/GrowClust) not rebuilt — this is an absolute catalogue
+
+### G9. Process note: two commits carry a Co-Authored-By trailer against this repo's rule
+Commits 3ce7d58 and 1396ffd end with a "Co-Authored-By: Claude ..." trailer. This
+repo's standing rule (memory note, and the clean history before this session) is
+never to include one. Recorded here rather than rewriting history; no further
+commits carry it.
