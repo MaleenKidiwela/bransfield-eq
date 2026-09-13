@@ -107,7 +107,7 @@ def main() -> None:
 
     work = REPO / "hypodd" / "_synth_tables"; work.mkdir(exist_ok=True)
     cache = work / "tt_table.npz"
-    dists = np.arange(0.0, 130.0001, 0.25); depths = np.arange(0.0, 30.0001, 0.1)
+    dists = np.arange(0.0, 130.0001, 1.0); depths = np.arange(0.0, 30.0001, 0.25)   # 131x121; the 0.25x0.1 grid (313k TauPy calls) blew a 40-min timeout
     if cache.exists():
         z = np.load(cache); P, S = z["P"], z["S"]; print(f"loaded cached table {P.shape}")
     else:
@@ -127,14 +127,14 @@ def main() -> None:
         return t
     errs = []
     for z in (2.0, 5.0, 10.0, 20.0):
-        i = int(round(z / 0.1)); errs.append(abs(P[i, 0] - vertical_tt(z, vp)))
+        i = int(round(z / 0.25)); errs.append(abs(P[i, 0] - vertical_tt(z, vp)))
     print(f"  check 1  vertical P (dist 0) vs slowness integral: max |diff| {max(errs)*1000:.1f} ms  "
           f"({'OK' if max(errs) < 0.02 else 'FAIL'})")
     # ---- verification 2: table finite where it should be ----
     bad = np.isnan(P).sum() + np.isnan(S).sum()
     print(f"  check 2  NaN cells: {bad} ({'OK' if bad == 0 else 'FAIL - inspect'})")
     # ---- verification 3: monotone in distance at fixed depth (first arrivals) ----
-    mono = np.all(np.diff(P[50], axis=0) >= -1e-6) and np.all(np.diff(S[50], axis=0) >= -1e-6)
+    mono = np.all(np.diff(P[20], axis=0) >= -1e-6) and np.all(np.diff(S[20], axis=0) >= -1e-6)
     print(f"  check 3  monotone with distance at 5 km depth: {'OK' if mono else 'FAIL'}")
     if args.table_only:
         return
