@@ -81,3 +81,6 @@ notes/figures/associations/
 
 # NLLoc run tree (16 GB of per-event .obs/.hyp; regenerable via scripts/28-31)
 nlloc/
+
+# VELEST joint 1D inversion run tree (regenerable from scripts/62_*)
+velest/
