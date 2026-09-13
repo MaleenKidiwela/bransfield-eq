@@ -811,3 +811,29 @@ three self-checks before any dt.ct is generated; (b) NLLoc Vp/Vs 1.90 on the
 2,000-event `abgrid_test` sample, ORCA_v4 grids, everything else identical to
 `abtest_ORCA_v4` — the cheap half of Merlin's NLLoc depth-stretch test, to be
 scored on near-station S−P.
+
+### I11. Independent S−P depth check (script 52) — the stretch is real; Merlin's table not reproducible
+`52_sp_depth_check.py`: observed nearest-station (<4 km) S−P from the picks vs the
+S−P predicted at each catalogue's depth (straight ray, path-average rock model,
+station at its true depth). Crude, but identical for every catalogue scored; the
+**spread ratio** across depth bins is the model-robust quantity. Scorer verified:
+pick times are epoch s, zero duplicate (event,station) pairs, obs S−P correlates
+0.66 with hypocentral distance.
+
+- I could not reproduce Merlin's I9 table. Its stated subset (σ_z ≤ 0.5, n=6,472)
+  matches neither the standard tier (3,455 such events, almost all shallow) nor
+  the full catalogue (31,676, of which **48% are grid-face-pinned** with
+  artificially small σ_z). A table on the latter tests artefacts. Merlin asked.
+- **On the STRICT tier (2,222 events with a near P+S station, depths 1.5–12 km)
+  the stretch is confirmed independently:** observed S−P grows ×2.14 from the
+  1–2 km bin to 8–12 km; NLLoc's depths predict ×3.79. Observed S−P is nearly
+  flat (0.79→0.88 s) across NLLoc depths 2→8 km — five kilometres of catalogue
+  depth the nearest station barely sees. NLLoc's depth axis is stretched ~1.8×.
+  The 1–2 km bin fits (+0.02 s); 2–5 km under-predicted by 0.15–0.30 s (too
+  shallow *or* model too fast); 8–12 km over-predicted by +0.16 (too deep).
+- **hypoDD DAMP 400 (QC-pass, strict-tier events) fits worse:** median misfit
+  −0.32 s vs NLLoc's −0.13 s; under-predicts everywhere 1–8 km. Confirms Merlin's
+  "DD not vindicated by the data that most directly constrain depth".
+- Both catalogues under-predict S−P at 2–5 km → the shared forward model is
+  likely too fast for S in the shallow crust (Wadati gave Vp/Vs 1.86–1.90 for near
+  paths vs 1.78 in the model). The Vp/Vs 1.90 NLLoc sample run is the direct test.
