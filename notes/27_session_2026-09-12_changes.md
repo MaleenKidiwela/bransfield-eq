@@ -717,3 +717,32 @@ before the other three launched. Acceptance: CND ~40–80; dz-vs-depth slope wel
 above −0.80; p90 depth close to NLLoc's; retention not collapsed. Then Merlin's
 discriminating test — forward-model dt.ct from the NLLoc locations through the same
 1D model, run the identical control, and see whether the depth spread survives.
+
+### I8. Damping sweep results (DAMP 100/200/400; 800 running) — compression is NOT a damping artefact
+CND read from the raw main-cluster iteration table (my earlier fused-field parse
+was unreliable and is superseded):
+
+| run | CND it1→last | RMSCT ms | AQ removed | DZ/iter m | reloc | retain | dz slope | p90 NLLoc | p90 DD |
+|---|---|---|---|---|---|---|---|---|---|
+| DAMP 20 | 1,151→3,744 | 203→128 | kept | 2,479→421 | 7,296 | 81% | −0.53 | 7.33 | 4.36 |
+| DAMP 100 | 382→485 | 193→117 | 1,270→18 | 2,319→468 | 5,734 | 64% | −0.56 | 8.14 | 4.73 |
+| DAMP 200 | 225→202 | | | | 6,125 | 68% | −0.55 | 8.02 | 4.84 |
+| DAMP 400 | **106→117** | 205→135 | 674→12 | 1,739→304 | 6,758 | 75% | **−0.53** | 7.87 | 5.23 |
+
+Damping fixed what it should: CND down 30×, airquakes to ~0 by iteration 4,
+per-iteration depth adjustment 2.3 km → 0.3 km. **The depth-compression slope did
+not move: −0.53 at CND 3,744 and −0.53 at CND ~110.** A signal that survives a 30×
+change in conditioning is in the differential times, not in LSQR noise-fitting —
+so Merlin's diagnosis that under-damping *caused* the compression does not hold,
+even though under-damping was real and needed fixing.
+
+Tentative reconciliation (sent to Merlin to attack): Merlin's own model-light S−P
+test found NLLoc's 6–12 km bins ~1.5–2 km over-deep. A −0.53 slope on events ~4 km
+above the median moves them ~2 km — the same magnitude — and DAMP 400's p90 of
+5.2 km is roughly where the S−P table placed those events. So hypoDD may be
+partly right about the deep tail and the truth sits between the catalogues.
+Alternative not excluded: a damping-independent 1D/flat-datum bias in the dt.ct
+forward model, which only the synthetic relocation test can discriminate.
+
+Retention rises with damping under IAQ=1 (64→75%) because a stiffer solution
+generates fewer airquakes. DAMP 800 pending; CND expected inside 40–80.
