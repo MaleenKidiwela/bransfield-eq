@@ -1151,3 +1151,41 @@ change at a time); Vp/Vs and depth-dependent S grids are step two. Keep the TIME
 identical incl. the station line; LOCGRID nz 63. One disagreement: Merlin expected FMM
 error to be late (positive); measured at BRA20 it was −60 ms at 0.4 km and +6 ms at 0.2 km,
 so the refinement stays. `61_sample_gates.py` implements gates 1–3 from the .hyp files.
+
+### I24. ORCA_v5 grids built and gated; the sample says the Grid2Time bias was NOT the depth-stretch cause
+Refined build: 38 stations, 224–323 s each, 8 workers, 13.7 GB peak per worker. Seven OBS
+still flagged by the (one-sided, naive) column gate: BRA21 −54/−63/−67 ms, BRA22 −42/−55/
+−58, BRA27 −22/−30/−31, BRA19 −28/−28/−29, BRA08 −23/−24/−24, BRA26 −13/−24/−26, BRA10
+−15/−13/−13. Arbitration on real rays (ORCA_v5 grid vs hypoDD's tracer, hypoDD.src of the
+fine frozen run): BRA19 +7.7 ms (MAD 8.7), BRA20 +7.3, BRA23 +7.3, BRA22 +13.3, BRA27 −13.6,
+**BRA21 −35.4 (MAD 23.6)**, **BRA08 +68.9 (n=452, 32 km — hypoDD's nodes are 10–20 km
+apart there, so hypoDD is the suspect)**. Against v4 the same numbers were −69 … −126 ms
+at every station. The two remaining outliers are flagged, not fixed: BRA21 sits inside
+the low-velocity fill (model seafloor deeper than the station), and there both solvers are
+inconsistent (MAD 24).
+
+Sample (2,000 events, identical control except the grids), `61_sample_gates.py`,
+`60_compare_sample_runs.py`, `52_sp_depth_check.py`:
+
+| gate | v4 (Grid2Time) | v5 (pykonal 0.2 km) |
+|---|---|---|
+| top-pinned fraction | 24.3% | 28.5% |
+| near(<4 km) P residual, pinned set | −0.141 s | −0.160 s |
+| near S residual, pinned set | −0.317 | −0.258 |
+| per-OBS P residual vs water depth | −0.0001 s/km | +0.0078 s/km |
+| S−P spread ratio, predicted vs observed | ×3.48 vs ×2.77 | ×3.51 vs ×2.80 |
+| depth p10/50/90 | 0.00/1.54/18.56 | 0.00/1.20/19.22 |
+| rms p50 | 0.237 | 0.239 |
+
+v5 − v4 per event: median depth shift 0.00 km, p10/p90 −0.53/+0.57; by v4 depth bin
+1–2 km −0.39, 2–4 −0.22, 4–6 +0.30, 6–9 +0.24, 9–15 +0.51 km; epicentre shift median
+0.76 km, p90 3.4 km. **The forward-model fix is real and stays (two independent solvers
+now agree with the grids to ~10 ms), but it does not move the stretch metrics; if
+anything shallow-up/deep-down grows slightly.** Merlin's mechanism (I23) over-predicted
+the effect; the −0.13 s near-station residual of the pinned set is unchanged, so its cause
+is elsewhere: the pinned quarter of the raw associations is likely dominated by
+mis-associated marginal events (near-station arrival 0.16 s earlier than any in-grid
+position allows), and the strict-tier stretch remains attributable to the velocity model
+proper (shallow structure / Vp/Vs), not to the solver. Launched: full-year NLLoc v5
+(16 shards, control identical to v4 except label/prefix — gated by diff) → 31 → 40; and
+the first full hypoDD IMOD=9 run (fine model, ISTART 2, DAMP 400) on the v4 standard tier.
