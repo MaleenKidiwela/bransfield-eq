@@ -652,3 +652,14 @@ at the end and my regex found none afterwards. Final state is what matters and i
 characterised above (0 above the flat datum; 59 above the local seafloor).
 
 Not done in this pass: dt.cc (new correlator), IMOD=9 experiment, any hybrid.
+
+### I6. CORRECTION: the catalogue CSVs are NOT in git
+`.gitignore` line 5 ignores `catalogs/*.csv`. Commits 0662675 and c4288d8 name the
+NLLoc catalogue CSVs as if committed; the `git add` was refused (stderr hidden,
+`;` not `&&`) and the commits went ahead without them. Same for the hypoDD CSVs
+(caught this time because the chain used `&&`). So: **every catalogue CSV lives on
+disk and was delivered to the user as a file; none is version-controlled.** That
+is the repo's standing convention (outputs are not versioned), not a new decision
+— but my commit messages overstated it. Scripts, grids headers, notes and the
+movie ARE committed, and every CSV is reproducible from them. If the catalogues
+should be versioned, that is a deliberate `.gitignore` change for the user to make.
