@@ -505,9 +505,17 @@ caldera-floor event (seafloor 1.69 km) legitimately plots above the median
 
 ### FINAL QC tiers (catalogs/nlloc_year_v4_{loose,standard,strict}.csv)
 - **loose 11,682** — 0 above seafloor by >0.2 km; 1,261 (11.0%) within 0–0.2 km of it
-- **standard 9,517** (v1: 6,324) — bsf median ~1.4 km; σ_z 0.73; rms 0.203;
-  **988 (10.6%) within 0–0.2 km of the seafloor** — at the seafloor to within grid
-  resolution, not demonstrably below it. State this if the standard tier is used.
+- **standard 9,517** (v1: 6,324) — bsf median ~1.4 km; σ_z 0.73; rms 0.203.
+  **2,005 events (21%) sit within ±0.2 km of the local seafloor**, 87% of them under
+  the Orca edifice. The user's point stands: near-seafloor seismicity is real on an
+  unstable volcano, and these are a *continuum* with the shallow population (rms and
+  σ_z vary smoothly deep→shallow→seafloor; no discontinuity), not an artefact class.
+  The honest caveat is narrower than I first wrote: near-seafloor depths are resolved
+  only to ~0.2 km (half a 0.4 km cell), and the top kilometre is where the velocity
+  model is weakest (strongest 3D variation, starting-model fill at the top node,
+  measured Vp/Vs 1.86–1.90 vs 1.78). Use **standard** for the shallow population —
+  strict excludes it by construction (bsf > 0.2). Refinement if it matters: a finer
+  grid in the top ~3 km and a better shallow velocity model.
 - **strict 2,278** (v1: 2,152) — bsf 0.53/**2.93**/6.33 km; σ_z 0.78; rms 0.170;
   every event ≥ 0.2 km below the seafloor
 - all tiers: 0% grid-face pinned, 0 REJECTED, `depth_datum=sealevel` stamped
