@@ -1121,3 +1121,17 @@ grid → `ORCA_v5.P.<STA>.time` with identical headers; gate per station: column
 < 15 ms at 3/6/10 km. Then: relocate the 2,000-event sample with ORCA_v5 and score S−P
 spread (the ×3.5 vs ×2.8 test) BEFORE the full-year re-run; if it collapses toward
 observed, rerun the year (v5), QC, movie, hypoDD 1D/3D on v5.
+
+### I22. pykonal at the native 0.4 km is itself up to 60 ms fast at some stations; 0.2 km fixes it
+First full-grid pass (script 59, 20 s/station, 38 stations) flagged 10 OBS with the new
+grid FASTER than the column integral by 20–63 ms (BRA20 −56/−61/−63 ms at 3/6/10 km,
+BRA23 −45/−52/−55, BRA16 −42/−49/−52). Arbitration with script 58 (hypoDD's independent
+tracer on the real rays): BRA20 hypoDD − pykonal(0.4) = +20 ms (MAD 8.6), BRA23 +9 ms —
+hypoDD sits closer to the column than pykonal does. Refining the velocity field to 0.2 km
+(trilinear) before solving: BRA20 pykonal − column = +1.2/+5.3/+6.6/+6.3/+6.2/+6.1 ms at
+z = 2–10 km — the −60 ms was first-order FMM discretisation error in the steep
+near-seafloor gradient, not a real fast path. NLLoc FD stays +58–68 ms slow at BRA20 and
++26–33 at BRA23 regardless. Decision: script 59 now solves on the 0.2 km upsample and
+keeps every second node (`--refine 2`, default); gate stays a flag, the arbiter is
+script 58 agreement with hypoDD on real rays. The 0.4 km ORCA_v5 grids are being
+overwritten; the sample run started on them is superseded.

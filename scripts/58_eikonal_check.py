@@ -63,7 +63,7 @@ def main():
     print(f"pykonal done; tt range {np.nanmin(tt):.3f}-{np.nanmax(tt):.3f} s")
     # (i) vertical column integral, (ii) NLLoc FD grid, (iii) pykonal at points below the station
     print(f"{'z':>5} {'column ∫s':>10} {'pykonal':>9} {'NLLoc FD':>9}  {'pyk-col':>8} {'FD-col':>7}")
-    for z in (2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 14.0):
+    for z in [q for q in (2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 14.0) if q < a.zmax - 1]:
         zz = np.linspace(hz, z, 2000); s = np.array([tri(slow, org, sp, (hx, hy, q)) for q in zz]) / sp[0]
         ti = np.trapezoid(s, zz); tp = tri(tt, sorg, ssp, (hx, hy, z)); tf = tri(T, org, sp, (hx, hy, z))
         print(f"{z:5.1f} {ti:10.4f} {tp:9.4f} {tf:9.4f}  {(tp-ti)*1000:+8.1f} {(tf-ti)*1000:+7.1f}")

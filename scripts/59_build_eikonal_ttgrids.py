@@ -14,7 +14,9 @@ Output: nlloc/time/ORCA_v5.P.<STA>.time.{hdr,buf} with the SAME header lines as 
 grids (dimensions, origin, spacing, station line, TRANS), plus the model copied as
 ORCA_v5.P.mod.* so NLLoc's GTFILES/LOCFILES roots stay consistent. Node value =
 velocity AT the node (trilinear between nodes), the convention every other tool here uses.
-Gate per station: |grid - vertical column slowness integral| at z = 3, 6, 10 km < 15 ms.
+Gate per station: |grid - vertical column slowness integral| at z = 3, 6, 10 km < 15 ms
+(the column is not always the first arrival, so a CHECK is a flag, not a failure; the
+real arbiter is agreement with hypoDD's independent tracer on real rays, script 58).
 """
 from __future__ import annotations
 import argparse, shutil, sys, time
@@ -41,18 +43,30 @@ def tri(g, org, sp, p):
     return v
 
 
-def one_station(sta: str) -> str:
+def one_station(sta: str, refine: int = 2) -> str:
+    """refine=2: solve on a 0.2 km trilinear upsample of the model, then keep every 2nd node.
+    At the native 0.4 km the first-order FMM is up to 60 ms FAST at some stations (BRA20 -60,
+    BRA23 -52 ms vs the column integral); at 0.2 km BRA20 is +5 ms. Verified 2026-09-13."""
     import pykonal
+    from scipy.ndimage import zoom
     t0 = time.time()
     slow, org, sp, _ = read_grid(REPO / "nlloc" / "model" / f"{SRC}.P.mod"); vp = (sp[0] / slow).astype(np.float64)
+    if refine > 1:
+        vp = zoom(vp, refine, order=1); sp_s = sp / refine
+    else:
+        sp_s = sp
     _, _, _, thdr = read_grid(REPO / "nlloc" / "time" / f"{SRC}.P.{sta}.time")
     hx, hy, hz = map(float, thdr[1].split()[1:4])
     solver = pykonal.solver.PointSourceSolver(coord_sys="cartesian")
-    solver.vv.min_coords = org; solver.vv.node_intervals = sp; solver.vv.npts = vp.shape
+    solver.vv.min_coords = org; solver.vv.node_intervals = sp_s; solver.vv.npts = vp.shape
     solver.vv.values = vp
     solver.src_loc = np.array([hx, hy, hz])
     solver.solve()
     tt = np.asarray(solver.tt.values, dtype=np.float32)
+    if refine > 1:
+        tt = np.ascontiguousarray(tt[::refine, ::refine, ::refine])   # back on the 0.4 km nodes
+        assert tt.shape == slow.shape, (tt.shape, slow.shape)
+    del solver, vp
     if not np.all(np.isfinite(tt)):
         return f"{sta}: FAIL non-finite travel times ({(~np.isfinite(tt)).sum()} nodes)"
     out = REPO / "nlloc" / "time" / f"{DST}.P.{sta}.time"
@@ -71,7 +85,8 @@ def one_station(sta: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stations", nargs="*", default=None, help="default: every station with a v4 grid")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=5, help="refine=2 needs ~7 GB per worker")
+    ap.add_argument("--refine", type=int, default=2)
     a = ap.parse_args()
     stations = a.stations or sorted(p.name.split(".")[2] for p in (REPO / "nlloc" / "time").glob(f"{SRC}.P.*.time.hdr"))
     for ext in ("hdr", "buf"):
@@ -79,7 +94,7 @@ def main():
         if not dst.exists(): shutil.copy(src, dst)
     print(f"{len(stations)} stations, {a.workers} workers; model {SRC} -> time grids {DST}")
     with ProcessPoolExecutor(max_workers=a.workers) as ex:
-        for msg in ex.map(one_station, stations):
+        for msg in ex.map(one_station, stations, [a.refine] * len(stations)):
             print("  " + msg, flush=True)
 
 
