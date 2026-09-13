@@ -24,6 +24,8 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_BIN = Path("/home/jovyan/HypoDD/src/hypoDD/hypoDD")
+# same source, vel3d.inc enlarged to 60x60x30 nodes (2026-09-13); identical on the 1D frozen test
+DEFAULT_BIN_3D = Path("/home/jovyan/HypoDD_3d_build/src/hypoDD_3d")
 
 
 def write_velocity(csv_path: Path, run_dir: Path, datum_shift_km: float = 0.0,
@@ -76,7 +78,8 @@ def make_control(label: str, n_lay: int, tops, vps, vss,
                  with_xc: bool, niter_ct: int, niter_cc: int,
                  damp: float = 200.0, iaq: int = 1,
                  wrct: float = 6.0, wrct_last: float = 4.0, wdct_last: float = -999.0,
-                 istart: int = 2) -> str:
+                 istart: int = 2, imod: int = 1, mod3d: str = "", lat3d: float = 0.0,
+                 lon3d: float = 0.0, rot3d: float = 0.0, ray3d: str = "2 9 2 0.5 1.0 1.35 0.0005 50") -> str:
     """Build a hypoDD.inp using IMOD=1 (variable Vp/Vs per layer) so the water
     layer's near-zero Vs is handled correctly rather than being forced to
     Vp/1.78 (which would put S waves in water, a non-physical state)."""
@@ -119,6 +122,28 @@ def make_control(label: str, n_lay: int, tops, vps, vss,
             ratios.append(vp / vs)
     ratios_line = " ".join(f"{r:.3f}" for r in ratios)
 
+    if imod == 9:
+        # getinp2.f: line 13+niter = IMOD, 14 = 3D model file, 15 = LAT3D LON3D ROT3D,
+        # 16 = IPHA NDIP ISKIP SCALE1 SCALE2 XFAC TLIM NITPB, 17 = CID. No 1D block.
+        forward_block = f"""*--- forward model (IMOD=9 -> 3D simulps model, pseudo-bending ray tracer):
+* IMOD
+9
+* 3DMOD (simulps format, built by 56_build_hypodd_3dmodel.py)
+{mod3d}
+* LAT3D LON3D ROT3D   (hypoDD frame: x east, y north, rot anticlockwise)
+{lat3d:.5f} {lon3d:.5f} {rot3d:.2f}
+* IPHA NDIP ISKIP SCALE1 SCALE2 XFAC TLIM NITPB
+{ray3d}"""
+    else:
+        forward_block = f"""*--- forward model (IMOD=1 -> 1D layered, variable Vp/Vs per layer):
+* IMOD
+1
+* TOP (km), terminate with -9
+{tops_line} -9
+* VEL Vp (km/s), terminate with -9
+{vp_line} -9
+* RATIO Vp/Vs per layer, terminate with -9    (water = 200 encodes 'no S')
+{ratios_line} -9"""
     ctl = f"""hypoDD_2
 * hypoDD control file -- label {label}
 *--- input file selection:
@@ -155,15 +180,7 @@ hypoDD.src
 * NITER  WTCCP  WTCCS  WRCC  WDCC  WTCTP  WTCTS  WRCT  WDCT DAMP
 {reweight_block}
 *
-*--- forward model (IMOD=1 -> 1D layered, variable Vp/Vs per layer):
-* IMOD
-1
-* TOP (km), terminate with -9
-{tops_line} -9
-* VEL Vp (km/s), terminate with -9
-{vp_line} -9
-* RATIO Vp/Vs per layer, terminate with -9    (water = 200 encodes 'no S')
-{ratios_line} -9
+{forward_block}
 *
 *--- cluster / event selection (0 = all clusters):
 * CID
@@ -212,6 +229,15 @@ def main():
     ap.add_argument("--max-layers", type=int, default=30, help="hypoDD MAXLAY is 50")
     ap.add_argument("--damp", type=float, default=200.0,
                     help="LSQR damping. Tune until the log's CND is ~40-80. Was 20 (CND in the thousands).")
+    ap.add_argument("--imod", type=int, default=1, choices=[1, 9],
+                    help="1 = 1D layered (write_velocity); 9 = 3D simulps model (--mod3d), stations at true elevation")
+    ap.add_argument("--mod3d", default=None, help="3D model file (IMOD=9); copied into the run dir")
+    ap.add_argument("--lat3d", type=float, default=-62.4413)
+    ap.add_argument("--lon3d", type=float, default=-58.44)
+    ap.add_argument("--rot3d", type=float, default=0.0)
+    ap.add_argument("--ray3d", default="2 9 2 0.5 1.0 1.35 0.0005 50",
+                    help="IPHA NDIP ISKIP SCALE1 SCALE2 XFAC TLIM NITPB. SCALE1 0.5 = the finest z-node spacing (must not exceed it); ray points are capped at 129 in ray_3d.f so long rays are unaffected")
+    ap.add_argument("--write-only", action="store_true", help="write hypoDD.inp and the model, do not run")
     ap.add_argument("--istart", type=int, default=2, choices=[1, 2],
                     help="2 = start at the catalogue hypocenters (default); 1 = single trial source at the cluster centroid")
     ap.add_argument("--iaq", type=int, default=1, choices=[0, 1],
@@ -247,11 +273,24 @@ def main():
     ctl = make_control(args.label, n_lay, tops, vps, vss,
                        args.with_xc, args.niter_ct, args.niter_cc,
                        damp=args.damp, iaq=args.iaq, wrct=args.wrct,
-                       wrct_last=args.wrct_last, wdct_last=args.wdct_last, istart=args.istart)
+                       wrct_last=args.wrct_last, wdct_last=args.wdct_last, istart=args.istart,
+                       imod=args.imod, mod3d=Path(args.mod3d).name if args.mod3d else "",
+                       lat3d=args.lat3d, lon3d=args.lon3d, rot3d=args.rot3d, ray3d=args.ray3d)
+    if args.imod == 9:
+        if not args.mod3d or not Path(args.mod3d).exists():
+            sys.exit("IMOD=9 needs --mod3d <existing simulps model file>")
+        shutil.copy(args.mod3d, run_dir / Path(args.mod3d).name)
+        if args.binary == str(DEFAULT_BIN):
+            args.binary = str(DEFAULT_BIN_3D)
+        print(f"  3D model: {args.mod3d} -> {run_dir/Path(args.mod3d).name}; ray params {args.ray3d}; binary {args.binary}")
+        if shift:
+            sys.exit("IMOD=9 runs on the sea-level datum with true station elevations; datum shift must be 0")
     print(f"  inversion: ISTART={args.istart}  DAMP={args.damp:.0f}  IAQ={args.iaq}  WRCT={args.wrct:.0f}/{args.wrct_last:.0f}  "
           f"WDCT(last set)={args.wdct_last:.0f}")
     (run_dir / "hypoDD.inp").write_text(ctl)
     print(f"Wrote {run_dir/'hypoDD.inp'}")
+    if args.write_only:
+        return
 
     print(f"\nRunning {args.binary} in {run_dir} ...")
     # No subprocess timeout -- year-long LSQR on a single big cluster can take

@@ -45,6 +45,10 @@ def main() -> None:
     ap.add_argument("--map-pad-km", type=float, default=8.0,
                     help="zoom the map to the events plus this margin")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--catalog", default=None,
+                    help="Any catalogue CSV instead of catalogs/nlloc_<label>.csv. A hypoDD CSV "
+                         "(yr/mo/dy/hr/mi/sc, dep, depth_bsl_km) is mapped onto the NLLoc columns; "
+                         "--out is then required.")
     ap.add_argument("--bin-days", type=float, default=2.0)
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--keep-fresh", type=float, default=14.0)
@@ -58,10 +62,30 @@ def main() -> None:
 
     global GX_MIN, GX_MAX, GY_MIN, GY_MAX
     (GX_MIN, GX_MAX), (GY_MIN, GY_MAX) = GRID_EXTENTS[args.tt_prefix]
-    df = pd.read_csv(REPO / "catalogs" / f"nlloc_{args.label}.csv")
+    if args.catalog:
+        if not args.out:
+            raise SystemExit("--catalog needs --out")
+        df = pd.read_csv(args.catalog)
+        if "origin_time" not in df.columns:            # hypoDD.reloc-derived CSV
+            sec = df.sc.astype(float)
+            df["origin_time"] = (pd.to_datetime(dict(year=df.yr, month=df.mo, day=df.dy,
+                                                     hour=df.hr, minute=df.mi), utc=True)
+                                 + pd.to_timedelta(sec, unit="s"))
+            if "depth_bsl_km" not in df.columns:
+                raise SystemExit("hypoDD CSV without depth_bsl_km; run 24_run_hypodd.py first")
+            df["depth_km"] = df.depth_bsl_km            # already below sea level
+            df["depth_datum"] = "sealevel"
+            if args.hq_only:
+                raise SystemExit("--hq-only uses NLLoc quality columns; not defined for a hypoDD CSV")
+        print(f"catalogue: {args.catalog}  ({len(df):,} rows)")
+    else:
+        df = pd.read_csv(REPO / "catalogs" / f"nlloc_{args.label}.csv")
     df["t"] = pd.to_datetime(df.origin_time, utc=True)
-    on_boundary = ((df.nlloc_x_km - GX_MIN < 0.5) | (GX_MAX - df.nlloc_x_km < 0.5) |
-                   (df.nlloc_y_km - GY_MIN < 0.5) | (GY_MAX - df.nlloc_y_km < 0.5))
+    if "nlloc_x_km" in df.columns:
+        on_boundary = ((df.nlloc_x_km - GX_MIN < 0.5) | (GX_MAX - df.nlloc_x_km < 0.5) |
+                       (df.nlloc_y_km - GY_MIN < 0.5) | (GY_MAX - df.nlloc_y_km < 0.5))
+    else:
+        on_boundary = pd.Series(False, index=df.index)
     if args.hq_only:
         df = df[~on_boundary & (df.gap_deg < 180) &
                 (df.rms_s < 0.5) & (df.n_phases >= 6)].copy()
@@ -177,7 +201,7 @@ def main() -> None:
         xs_fade.set_offsets(np.c_[lon_np[mask_old], dep_np[mask_old]])
         xs_fresh.set_offsets(np.c_[lon_np[mask_fresh], dep_np[mask_fresh]])
         title_txt.set_text(
-            f"NLLoc {args.label} (HQ)  —  "
+            f"{'hypoDD ' + Path(args.catalog).stem if args.catalog else 'NLLoc ' + args.label + ' (HQ)'}  —  "
             f"{pd.Timestamp(frame_t).strftime('%Y-%m-%d')}  "
             f"({int(mask_all.sum()):,} events; "
             f"{int(mask_fresh.sum())} in last {args.keep_fresh:.0f} d)"
