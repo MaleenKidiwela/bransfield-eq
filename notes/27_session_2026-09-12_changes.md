@@ -746,3 +746,51 @@ forward model, which only the synthetic relocation test can discriminate.
 
 Retention rises with damping under IAQ=1 (64→75%) because a stiffer solution
 generates fewer airquakes. DAMP 800 pending; CND expected inside 40–80.
+
+### I9. Merlin on the sweep — my point (3) retracted; NLLoc's depth axis is stretched
+Model-light S−P test against every run (NLLoc σ_z ≤ 0.5, nearest P+S station < 4 km):
+
+| run | Spearman(NLLoc z, DD z) | median |S−P misfit| at NLLoc z | at DD z | DD z for NLLoc 5–8 km | for 8–12 km |
+|---|---|---|---|---|---|---|
+| DAMP 20 | 0.49 | 0.210 s | 0.223 | 2.58 km | 2.94 |
+| DAMP 100 | 0.39 | 0.201 | 0.275 | 2.01 | 2.37 |
+| DAMP 200 | 0.45 | 0.205 | 0.265 | 2.21 | 2.66 |
+| DAMP 400 | 0.57 | 0.212 | 0.241 | 2.83 | 3.76 |
+
+1. **hypoDD depths fit near-station S−P worse than NLLoc's at every damping.** DD is
+   not vindicated by the data that most directly constrain depth.
+2. **The deep-bin DD depths rise monotonically with DAMP** (2.01→2.21→2.83 km). LSQR
+   damping penalises movement from the *initial* (NLLoc) positions, so a solution
+   that drifts toward NLLoc as DAMP rises is **leakage, not information**. My I8
+   reading that "DAMP 400 lands where the S−P table put those events" mistook
+   leakage for agreement. **Retracted.** The data-dominated DD answer is the
+   low-damping one (~2 km for events NLLoc puts at 5–12 km) and the S−P contradicts it.
+3. **The −0.53 slope is a bulk average of two opposite errors.** NLLoc's 0–1 km events
+   (σ_z ≤ 0.5) show observed near S−P 0.69–0.75 s vs 0.50 predicted at NLLoc depth —
+   too shallow; its deep bins are too deep. **NLLoc's depth axis is stretched.** DD
+   compresses the whole axis; the regression averages the regimes.
+4. Model-robust quantity: **S−P spread ratio** 0–1 → 8–12 km bins. Observed ×1.8.
+   NLLoc predicts ×2.8. DD predicts ×1.36. Truth is between, ≈ geometric mean. Quote
+   this, not the slope.
+5. Intrinsic DD compression is only ~10–20% (flat-datum ~10%; too-fast source-depth
+   model adds some). The rest of −0.53 is NLLoc's true depth errors being much larger
+   than its formal σ_z (model error is not in the PDF) → regression to the mean.
+
+**Consequences**
+- For depth: **NLLoc v4 remains the product, with a stated stretch caveat**
+  (shallow too shallow, deep too deep). It is an NLLoc-side velocity problem — the
+  same top-layer-too-fast / Vp/Vs suspicion — with a cheap test: the 2,000-event
+  sample with Vp/Vs 1.9, and with the top 2 km slowed 10%, scored by near S−P.
+- For hypoDD: **with catalogue-only dt at rct 0.23 s it will not beat NLLoc on depth
+  at any damping.** Its value arrives with dt.cc. Choose DAMP by CND (stop at 40–80,
+  likely 800), never by preferred depths. The IAQ=1 stiff run is the honest one for
+  relative geometry, but the 1.0 km datum makes the shallow edifice population
+  airquakes by construction → re-run with the datum at the shallowest event
+  seafloor (~0.4 km).
+- **Decisive test (next):** synthetic dt.ct forward-modelled from NLLoc starts
+  through hypoDD's own 22-layer flat model; three runs (noise-free; 0.15 s/pick
+  Gaussian; +5% ±0.5 s outliers); identical DAMP-400 control. Acceptance for the
+  noise-free run: slope of (DD−start) on start within ±0.05, p90 within 0.2 km —
+  else the forward model or inversion is broken. The noisy runs give the
+  inversion's own compression baseline; real-data −0.53 minus that baseline =
+  genuine data–model inconsistency.
