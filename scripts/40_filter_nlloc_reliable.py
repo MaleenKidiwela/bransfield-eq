@@ -30,9 +30,10 @@ ST = REPO / "catalogs" / "station_geometry.csv"
 GRID_LAYOUTS = {
     "ORCA":    ((-29.8, 30.2), (-20.0, 20.0)),
     "ORCA_v2": ((-150.0, 80.0), (-110.0, 70.0)),
+    "ORCA_v3": ((-150.0, 80.0), (-110.0, 70.0)),
 }
 # Deepest travel-time node: ORCA 126 nodes x 0.2 km = 25.0; ORCA_v2 64 x 0.4 = 25.2.
-GRID_Z = {"ORCA": (0.0, 25.0), "ORCA_v2": (0.0, 25.2)}
+GRID_Z = {"ORCA": (0.0, 25.0), "ORCA_v2": (0.0, 25.2), "ORCA_v3": (0.0, 25.2)}
 
 
 def main() -> None:

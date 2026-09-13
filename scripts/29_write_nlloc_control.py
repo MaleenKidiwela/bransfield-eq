@@ -25,6 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 GRID_LAYOUTS = {
     "ORCA":    dict(nx=301, ny=201, nz=126, x0=-29.8, y0=-20.0,  dx=0.2),
     "ORCA_v2": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
+    "ORCA_v3": dict(nx=576, ny=451, nz=64,  x0=-150.0, y0=-110.0, dx=0.4),
 }
 
 
@@ -60,7 +61,7 @@ LOCCOM {label}
 LOCFILES {obs_path} NLLOC_OBS {tt_root} {out_root}
 LOCHYPOUT SAVE_NLLOC_ALL SAVE_NLLOC_SUM
 LOCSEARCH OCT 9 7 5 0.001 100000 5000 0 0
-LOCGRID {nx} {ny} {nz}  {x0} {y0} 0.0  {dx} {dx} {dx}  PROB_DENSITY SAVE
+LOCGRID {nx} {ny} {nz_loc}  {x0} {y0} 0.0  {dx} {dx} {dx}  PROB_DENSITY SAVE
 LOCMETH GAU_ANALYTIC 100 4 -1 -1 {vpvs} -1 -1 1
 LOCGAU 0.1 0.0
 LOCGAU2 0.01 0.05 2.0
@@ -74,11 +75,13 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="picker_only_no_shots")
     p.add_argument("--vpvs", type=float, default=1.78)
-    p.add_argument("--tt-prefix", default="ORCA",
+    p.add_argument("--tt-prefix", default="ORCA_v3",
                    choices=sorted(GRID_LAYOUTS.keys()))
     args = p.parse_args()
 
-    layout = GRID_LAYOUTS[args.tt_prefix]
+    layout = dict(GRID_LAYOUTS[args.tt_prefix])
+    # One cell shallower than the TT grid: see the LOCGRID note in the template.
+    layout["nz_loc"] = layout["nz"] - 1
     tt_dir = REPO / "nlloc" / "time"
     available = stations_with_grids(tt_dir, args.tt_prefix)
     if not available:

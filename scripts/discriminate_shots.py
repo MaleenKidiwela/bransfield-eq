@@ -45,6 +45,9 @@ def load_shots() -> pd.DataFrame:
         print(f"  {path.name:<40s}  {len(df):>6,} shots  "
               f"{df.dt.min()} → {df.dt.max()}")
     shots = pd.concat(rows, ignore_index=True).sort_values("dt").reset_index(drop=True)
+    # pandas 3 gives datetime64[us] from string parsing but datetime64[ns] from
+    # to_datetime(unit="s"); merge_asof raises MergeError across units. Pin to ns.
+    shots["dt"] = shots["dt"].dt.as_unit("ns")
     return shots
 
 
@@ -71,6 +74,7 @@ def main():
                                            format="mixed", errors="coerce")
     else:
         ev["origin_time"] = pd.to_datetime(ev.time, unit="s", utc=True)
+    ev["origin_time"] = ev["origin_time"].dt.as_unit("ns")   # see note in load_shots()
     ev = ev.sort_values("origin_time").reset_index(drop=True)
     print(f"  events: {len(ev):,}")
 
@@ -118,7 +122,17 @@ def main():
 
     out_full = REPO / "catalogs" / f"pyocto_events_{args.label}_with_shot_flag.csv"
     out_clean = REPO / "catalogs" / f"pyocto_events_{args.label}_no_shots.csv"
-    ev_sorted_back = ev.sort_values("event_idx" if "event_idx" in ev.columns else "idx").reset_index(drop=True)
+    # Line ~131 below hard-requires event_idx while this line used to fall back to a
+    # per-chunk "idx". On a merged year catalogue that fallback is non-unique, so the
+    # event file was written and THEN the pick join raised KeyError -- or worse, matched
+    # every day's event 0 to every other day's. Require the global key explicitly.
+    if "event_idx" not in ev.columns:
+        raise SystemExit("events file has no event_idx column -- it is the global key; "
+                         "re-merge with scripts/17f_pyocto_year_newpool.sh")
+    if not ev["event_idx"].is_unique:
+        raise SystemExit(f"event_idx is not unique ({ev.event_idx.duplicated().sum()} dups) "
+                         f"-- refusing to join picks on a non-unique key")
+    ev_sorted_back = ev.sort_values("event_idx").reset_index(drop=True)
     ev_sorted_back.to_csv(out_full, index=False)
     ev_sorted_back[~ev_sorted_back.flag_shot].drop(columns=["flag_shot", "shot_idx", "shot_survey"]).to_csv(out_clean, index=False)
     print(f"\nwrote {out_full}")

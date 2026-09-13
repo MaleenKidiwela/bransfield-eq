@@ -73,10 +73,17 @@ echo "=== merging ==="
 PYTHONPATH=src python3 -u - <<'PYEOF'
 import glob, pandas as pd, pathlib
 out = pathlib.Path("catalogs/pyocto_daily_newpool")
-ev = sorted(out.glob("events_*.csv")); pk = sorted(out.glob("picks_*.csv"))
-print(f"  {len(ev)} daily event files, {len(pk)} pick files")
-E=[]; P=[]; off=0
-for e,p in zip(ev,pk):
+ev = sorted(out.glob("events_*.csv"))
+print(f"  {len(ev)} daily event files")
+E=[]; P=[]; off=0; missing=[]
+for e in ev:
+    # Derive the pick path from the TAG, never by zipping two sorted lists by
+    # position: one missing pick file would silently shift every later pairing and
+    # join each day's events to another day's picks, while the uniqueness assert
+    # downstream still passed.
+    p = e.with_name(e.name.replace("events_", "picks_", 1))
+    if not p.exists():
+        missing.append(e.name); continue
     # A day with no events is written as a 1-byte file; pd.read_csv raises
     # EmptyDataError on it, which would abort the merge after the whole year.
     try:
@@ -95,6 +102,9 @@ for e,p in zip(ev,pk):
     dp["chunk_idx"]=dp[kc]; dp["event_idx"]=dp[kc]+off
     off += int(de["idx"].max())+1
     E.append(de); P.append(dp)
+if missing:
+    raise SystemExit(f"  ABORT: {len(missing)} event files have no matching picks file, "
+                     f"first: {missing[:3]}")
 ev_all=pd.concat(E,ignore_index=True); pk_all=pd.concat(P,ignore_index=True)
 assert ev_all.event_idx.is_unique, "event_idx not unique after merge"
 ev_all.to_csv("catalogs/pyocto_events_year_newpool.csv", index=False)
