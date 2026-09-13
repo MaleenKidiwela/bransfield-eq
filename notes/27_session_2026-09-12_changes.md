@@ -880,3 +880,18 @@ rock too fast (the tomography's starting-model fill at the top node). Test: slow
 Vp 10% in the top 2 km below the *local* seafloor of ORCA_v4, rebuild TT grids,
 relocate the same sample, score at 1.88. If the predicted range compresses toward
 ×2.8, the stretch is the shallow P model; if not, it is in the picks.
+
+### I14. Top-layer test launched (`53_perturb_velgrid.py` → ORCA_v4slow)
+Vp × 0.90 for nodes 0–2 km below the *local* seafloor (from ORCA_v4's water-depth
+surface): 1,298,880 of 16.6 M nodes (7.8% — exactly 5 of 64 depth levels at 0.4 km),
+zone Vp 1.60–6.05 → 1.44–5.45 km/s, all other nodes bit-identical. Header fields
+identical to ORCA_v4; travel-time grids rebuilt for all 38 stations with true
+depths (BRA09 1.943 confirmed). NLLoc on the same 2,000-event sample, Vp/Vs 1.78;
+scored against the ORCA_v4 baseline with the scorer fixed at 1.88. Decision rule: if
+the predicted S−P spread compresses from ×3.5 toward the observed ×2.8, the stretch
+is the shallow P model; if not, it is in the picks. Minor artefact noted: one
+boundary node class at 1.60 km/s is slowed to 1.44 (below water speed); negligible
+at 0.4 km resolution but should be clipped if this grid is ever used for production.
+
+The 1.78-scored version of the Vp/Vs test (bvfxsists) agrees with the 1.88-scored
+one — same ×3.5 → ×3.6 non-result — so I13's conclusion is stable across scorer ratio.
