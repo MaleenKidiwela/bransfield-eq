@@ -1227,3 +1227,25 @@ seafloor p10/50/90 0.12/2.56/5.93 km → `catalogs/hypodd_year_v5_3d_qc.csv`, mo
 NLLoc depth axis by ~18% from either start (v4 −0.171, v5 −0.176): consistent, and
 smaller than the 1D flat-model figure (−0.23), as expected once the forward model is
 3D and the stations sit at true depth.
+
+### I27. Faster-top test (ORCA_v4fast: Vp ×1.15 in the top 2 km below the local seafloor, pykonal grids)
+Same 2,000-event sample, same control, scored against v5:
+
+| gate | v5 | v4fast |
+|---|---|---|
+| top-pinned | 28.5% | 31.4% |
+| near P residual, pinned set | −0.160 s | −0.176 s |
+| rms p50 | 0.239 | 0.242 s |
+| S−P spread predicted vs observed | ×3.51 vs ×2.80 | ×3.35 vs ×2.55 |
+| depth p10/50/90 | 0.00/1.20/19.2 | 0.00/0.91/20.3 km |
+
+Per event: shallow bins move up (1–2 km −0.44, 2–4 −0.35), deep bins down (6–9 +0.37,
+9–15 +0.41) — the same shallow-up/deep-down response every model change has produced
+(v4slow, Vp/Vs 1.90, v5, v4fast). Neither a slower nor a faster top 2 km closes the
+S−P spread gap (ratio of predicted to observed stays 1.25–1.31). Conclusion for today: the
+depth axis of the NLLoc solution is weakly constrained and trades against the model
+everywhere, not in one layer; fixing it is a joint hypocentre–velocity problem (VELEST /
+simulps-style, or a depth-dependent Vp/Vs with S grids), which is a separate project.
+Delivered position: **NLLoc v5** for absolute locations (forward model verified by two
+independent solvers) with the depth caveat, and **hypoDD 3D on v5** for relative geometry
+(depth axis ~18% shorter than NLLoc's, consistent from either start).
