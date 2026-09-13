@@ -748,7 +748,14 @@ Retention rises with damping under IAQ=1 (64→75%) because a stiffer solution
 generates fewer airquakes. DAMP 800 pending; CND expected inside 40–80.
 
 ### I9. Merlin on the sweep — my point (3) retracted; NLLoc's depth axis is stretched
-Model-light S−P test against every run (NLLoc σ_z ≤ 0.5, nearest P+S station < 4 km):
+Model-light S−P test against every run — **CORRECTION (I12): the subset was the entire
+standard tier with a near P+S station, NOT σ_z ≤ 0.5.** Merlin's filter read the `ez`
+field of phase.dat, which script 22 writes as 0.00, so it passed everything (n=6,472;
+σ_z p10/50/90 0.25/0.73/1.41). It contains no grid-face artefacts but does include the
+881 events clamped to the datum at 0.01 km. Merlin has withdrawn the shallow-end
+claim ("NLLoc too shallow at 0–1 km") as population-dependent; the shape to quote is
+I11's strict-tier result. Deep-end over-depth, "DD fits worse at every damping" and
+the damping-leakage trend stand.
 
 | run | Spearman(NLLoc z, DD z) | median |S−P misfit| at NLLoc z | at DD z | DD z for NLLoc 5–8 km | for 8–12 km |
 |---|---|---|---|---|---|---|
@@ -837,3 +844,22 @@ pick times are epoch s, zero duplicate (event,station) pairs, obs S−P correlat
 - Both catalogues under-predict S−P at 2–5 km → the shared forward model is
   likely too fast for S in the shallow crust (Wadati gave Vp/Vs 1.86–1.90 for near
   paths vs 1.78 in the model). The Vp/Vs 1.90 NLLoc sample run is the direct test.
+
+
+### I12. Reconciled with Merlin — the robust statement, and how to score the Vp/Vs test
+- Merlin's I9 subset was the whole standard tier (labelling error, corrected above).
+  Between two scorers on the *same* events agreement should be ~0.05 s; the earlier
+  gap was population (standard vs strict, plus 881 clamped events), not method. The
+  station-depth/datum difference between scorers is ≤ 0.03–0.06 s — not an explanation.
+- **Robust statement (both scorers, different subsets): NLLoc's depth axis is stretched
+  ~1.5–1.8× over 1–12 km** — observed S−P spread ×2.14 vs predicted ×3.79 (strict);
+  ×2.05 vs ×2.9 (standard). Sharpest form: observed nearest-station S−P is nearly flat
+  (0.79 → 0.88 s) across NLLoc depths 2 → 8 km, where ~0.6 s of difference is expected.
+  **Within the strict tier the 2–8 km depth ordering is largely unsupported by the
+  observable that constrains it most directly.** Lead with this, not with hypoDD.
+- Where pred−obs crosses zero depends on the scorer's Vp/Vs (model-dependent);
+  "which end is wrong" is not robust, "the axis is stretched" is.
+- Scoring the Vp/Vs 1.90 NLLoc twin: **fix the scorer's Vp/Vs (Wadati ≈ 1.88) for
+  both runs**, so positions alone are compared. Metric: does predicted S−P at the
+  relocated depths track the observed 0.79 → 0.88 across 2–8 km? If yes, the stretch
+  was Vp/Vs; if the predicted range stays ×3–4, it is the P model or the picks.
