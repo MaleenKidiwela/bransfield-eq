@@ -1135,3 +1135,19 @@ near-seafloor gradient, not a real fast path. NLLoc FD stays +58–68 ms slow at
 keeps every second node (`--refine 2`, default); gate stays a flag, the arbiter is
 script 58 agreement with hypoDD on real rays. The 0.4 km ORCA_v5 grids are being
 overwritten; the sample run started on them is superseded.
+
+### I23. Merlin's review of I21 (recorded for the audit trail)
+Agrees the Grid2Time bias is the cause and that hypoDD's tracer never had it, so the
+−0.23 compression (I18) and the S−P stretch (I11) were both measuring NLLoc's slow grids.
+Mechanism: half-cell shift on the station-side leg ≈ +65 ms constant, ∝ 1/cos(i) so
++65 → +130 ms with distance; station-cell term (first 0.4 km at seafloor velocity) ≈ +55 ms,
+station-specific. Sign: moveout term pushes events DEEPER (~0.4–0.5 km); the S−P term
+(×0.78 of the bias) pushes near-station events SHALLOWER → top-face pinning; shallow-up +
+deep-down = the stretch. Gates for the 2,000-event sample: pinned fraction (41% on v3/v4),
+near-station P residual of the pinned set (−0.13 s → ~0), S−P spread (×3.5 → ×2.8),
+per-station residual vs water depth (−0.036 s/km → ~0); plus a frozen ISTART=2 hypoDD run
+on v5 positions (initial RMSCT should drop below 193 ms). Keep S = 1.78·P for v5 (one
+change at a time); Vp/Vs and depth-dependent S grids are step two. Keep the TIME headers
+identical incl. the station line; LOCGRID nz 63. One disagreement: Merlin expected FMM
+error to be late (positive); measured at BRA20 it was −60 ms at 0.4 km and +6 ms at 0.2 km,
+so the refinement stays. `61_sample_gates.py` implements gates 1–3 from the .hyp files.
