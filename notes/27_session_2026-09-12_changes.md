@@ -794,3 +794,20 @@ Model-light S−P test against every run (NLLoc σ_z ≤ 0.5, nearest P+S statio
   else the forward model or inversion is broken. The noisy runs give the
   inversion's own compression baseline; real-data −0.53 minus that baseline =
   genuine data–model inconsistency.
+
+### I10. DAMP 800 hung; sweep closed at 400
+The DAMP 800 run produced iterations 1–8 at ~1 min each, then sat 55 minutes in
+iteration 9 at 99.8% CPU with no new output (last reloc file and log line both
+14:47). Killed by PID after confirming the process cwd. Not diagnosed further:
+the sweep's conclusion — depth compression is damping-independent — stands on
+20/100/200/400, and Merlin's rule is to choose DAMP by CND, where 400 (CND
+~100–120) is the closest to the 40–80 target that completed. **DAMP 400, IAQ=1
+is the reference control for the synthetic test.** If a run in the 40–80 range
+is wanted later, try 600 and watch for the same stall.
+
+Launched: (a) the synthetic-dt.ct travel-time table (TauPy on hypoDD's own
+22-layer flat model, 300 depths × 521 distances × P,S, 16 workers), gated by
+three self-checks before any dt.ct is generated; (b) NLLoc Vp/Vs 1.90 on the
+2,000-event `abgrid_test` sample, ORCA_v4 grids, everything else identical to
+`abtest_ORCA_v4` — the cheap half of Merlin's NLLoc depth-stretch test, to be
+scored on near-station S−P.
