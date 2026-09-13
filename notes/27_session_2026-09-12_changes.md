@@ -428,3 +428,28 @@ Every stage is gated on a check that would catch the failure class it is prone t
 4. QC → 0% grid-face pinning in standard/strict; bsf computed on the right datum
 5. acceptance → v4 vs v1 pinning and depth distributions
 6. movie → a frame visually inspected, datum confirmed from the column
+
+### G7. MISTAKE (mine): two instances of the v4 run started simultaneously
+My first relaunch attempt (`rm -rf` old output + relaunch, run in the background)
+appeared blocked — its output file was empty when I checked — so I quarantined the
+old output by `mv` and relaunched by hand (instance A, 06:57). The background task
+had in fact been stuck in the `rm -rf` on ~280k NFS files; when it finished it
+launched a second instance (B, 07:01). 32 NLLoc workers were writing the same
+shard directories. Caught by the worker count (32 vs 16). B was killed by PID;
+A retained; verified 16 workers, all children of A. Because filenames are
+deterministic per event and both instances had identical inputs and grids, any
+files B wrote were byte-identical overwrites — Gate 2 (per-shard count == input
+count) is the confirming check. Lesson recorded: never `rm -rf` a large NFS tree
+in a fire-and-forget background command; `mv` to quarantine, and never launch a
+second run without confirming the first is dead.
+
+### G8. CORRECTION to G3 and to commit 3ce7d58: the broken output was NOT preserved
+Both say the full-obs-bug output was "quarantined, not deleted". That is wrong.
+The background `rm -rf` (see G7) had already opened the old directory when I
+renamed it to QUARANTINE_...; it continued deleting through the open handle, so
+the quarantine ended up empty and the broken output is gone. Nothing of value was
+lost — that output was 16 copies of the full catalogue and useless — but the
+record must say what actually happened. The `rm` did NOT recurse into instance
+A's new `nlloc/output/year_v4/` (its "Directory not empty" error is the rmdir at
+the end hitting A's live directory by path); A's files all postdate 06:57 and
+Gate 2 is the definitive check of A's completeness. Empty quarantine dirs removed.
