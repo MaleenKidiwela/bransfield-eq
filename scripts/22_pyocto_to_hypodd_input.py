@@ -31,10 +31,24 @@ REPO = Path(__file__).resolve().parent.parent
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="picker_only")
+    ap.add_argument("--events-csv", default=None,
+                    help="event catalogue (default catalogs/pyocto_events_<label>.csv). "
+                         "For the v2 rebuild pass the NLLoc QC tier: lat/lon/depth_km BSL.")
+    ap.add_argument("--picks-csv", default=None,
+                    help="picks keyed by event_idx (default catalogs/pyocto_picks_<label>.csv)")
+    ap.add_argument("--depth-col", default=None,
+                    help="depth column in the events file. Auto: depth_km, depth, z.")
+    ap.add_argument("--datum-shift-km", type=float, default=0.0,
+                    help="hypoDD flattens every OBS to elevation 0, so it needs a SEAFLOOR "
+                         "datum. Subtract this (representative water depth under the events, "
+                         "km) from below-sea-level depths. Land stations are raised by the "
+                         "same amount. 0 = no shift (input already below-seafloor).")
     args = ap.parse_args()
 
-    ev_path = REPO / "catalogs" / f"pyocto_events_{args.label}.csv"
-    pk_path = REPO / "catalogs" / f"pyocto_picks_{args.label}.csv"
+    ev_path = Path(args.events_csv) if args.events_csv else REPO / "catalogs" / f"pyocto_events_{args.label}.csv"
+    pk_path = Path(args.picks_csv)  if args.picks_csv  else REPO / "catalogs" / f"pyocto_picks_{args.label}.csv"
+    if not ev_path.is_absolute(): ev_path = REPO / ev_path
+    if not pk_path.is_absolute(): pk_path = REPO / pk_path
     st_path = REPO / "catalogs" / "station_geometry.csv"
     out_dir = REPO / "hypodd" / args.label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -46,11 +60,17 @@ def main():
     else:
         # pyocto sometimes writes origin_time as a numeric epoch-second string;
         # try datetime parse first, then fall back to epoch-seconds. Drop NaT.
-        ot = pd.to_datetime(ev.origin_time, utc=True, errors="coerce")
-        if ot.isna().mean() > 0.5:
-            ot = pd.to_datetime(pd.to_numeric(ev.origin_time, errors="coerce"),
-                                unit="s", utc=True)
+        # Dispatch on dtype. A numeric epoch column parsed with to_datetime lands on
+        # 1970-01-01 as VALID timestamps (nanosecond interpretation), so the old
+        # NaT-fraction test never fired and a numeric catalogue would have been
+        # silently dated 1970.
+        if pd.api.types.is_numeric_dtype(ev.origin_time):
+            ot = pd.to_datetime(ev.origin_time, unit="s", utc=True)
+        else:
+            ot = pd.to_datetime(ev.origin_time, utc=True, errors="coerce", format="mixed")
         ev["origin_time"] = ot
+        if (ot.dt.year < 2000).any():
+            raise SystemExit("origin_time parsed to before 2000 -- unit/dtype problem")
     n_before = len(ev)
     ev = ev.dropna(subset=["origin_time"]).reset_index(drop=True)
     if len(ev) != n_before:
@@ -66,7 +86,13 @@ def main():
     print(f"Loading picks: {pk_path}")
     pk = pd.read_csv(pk_path)
     if "pick_time" not in pk.columns:
-        pk["pick_time"] = pd.to_datetime(pk.time, unit="s", utc=True)
+        # dispatch on dtype: numeric = epoch seconds, else ISO strings
+        if pd.api.types.is_numeric_dtype(pk.time):
+            pk["pick_time"] = pd.to_datetime(pk.time, unit="s", utc=True)
+        else:
+            pk["pick_time"] = pd.to_datetime(pk.time, utc=True, format="mixed")
+        if (pk["pick_time"].dt.year < 2000).any():
+            raise SystemExit("pick_time parsed to before 2000 -- unit/dtype problem")
     if "sta_key" not in pk.columns:
         pk["sta_key"] = pk["station"].astype(str)
     pk["sta_bare"] = pk["sta_key"].str.split(".").str[-1]
@@ -98,6 +124,14 @@ def main():
     lines = []
     for _, r in st.iterrows():
         elev = float(r[elev_col]) if elev_col else 0.0
+        if args.datum_shift_km:
+            # Seafloor datum: OBS sit ON the datum (0). hypoDD clamps negative elevation
+            # to 0 anyway (getdata.f), so writing 0 is honest rather than accidental. Land
+            # stations are ABOVE the datum by their elevation plus the water column, and
+            # IMOD=1 honours positive elevation -- previously they were written at ~0 m
+            # and so sat 1 km too deep on the seafloor.
+            on_sf = bool(r.get("on_seafloor", False)) or elev < 0
+            elev = 0.0 if on_sf else elev + args.datum_shift_km * 1000.0
         lines.append(f"{r.station:<6s} {r.latitude:9.5f} {r.longitude:10.5f} {elev:8.1f}")
     (out_dir / "station.dat").write_text("\n".join(lines) + "\n")
     print(f"  wrote station.dat with {len(lines)} stations")
@@ -106,6 +140,9 @@ def main():
     # Group picks by event for fast per-event iteration.
     picks_by_event = {idx: g for idx, g in pk.groupby("event_idx")}
     n_used_picks = 0
+    n_drop_neg = n_drop_late = n_clamped = 0
+    depth_col = args.depth_col or next(c for c in ("depth_km", "depth", "z") if c in ev.columns)
+    print(f"  depth column: {depth_col!r}   datum shift: {args.datum_shift_km} km")
     out_lines = []
     for _, e in ev.iterrows():
         t = e.origin_time
@@ -113,7 +150,13 @@ def main():
         mag = float(e.get("magnitude", 0.0)) if not pd.isna(e.get("magnitude", np.nan)) else 0.0
         lat = float(e.get("latitude", e.get("lat", np.nan)))
         lon = float(e.get("longitude", e.get("lon", np.nan)))
-        dep = float(e.get("depth", e.get("z", 0.0)))
+        dep = float(e[depth_col])
+        if args.datum_shift_km:
+            dep = dep - args.datum_shift_km          # BSL -> below representative seafloor
+            if dep < 0.01:
+                n_clamped += 1
+                dep = 0.01                           # hypoDD wants a positive start; IAQ=0 keeps
+                                                     # it if the inversion pushes it back up
         rms = float(e.get("rms_residual", 0.0)) if "rms_residual" in ev.columns else 0.0
         hid = int(e.hypodd_id)
         out_lines.append(
@@ -128,8 +171,10 @@ def main():
             tt = (p.pick_time - t).total_seconds()
             # MAXDIST is 100 km and min layer Vp >= 1.4 km/s; max physical
             # one-way TT < 75 s. Accept up to 60 s as a hard sanity cap.
-            if tt <= 0 or tt > 60:
-                continue
+            if tt <= 0:
+                n_drop_neg += 1; continue
+            if tt > 60:
+                n_drop_late += 1; continue
             # weight: PhaseNet `prob` is a detection-confidence score, NOT a
             # timing-uncertainty proxy. Piecewise-linear calibration:
             #   prob >= 0.8 -> wt = 1.0   (high-confidence pick)
@@ -154,6 +199,18 @@ def main():
 
     (out_dir / "phase.dat").write_text("\n".join(out_lines) + "\n")
     print(f"  wrote phase.dat: {len(ev):,} event headers + {n_used_picks:,} phase lines")
+    print(f"  picks dropped: {n_drop_neg:,} with tt<=0, {n_drop_late:,} with tt>60 s")
+    if args.datum_shift_km:
+        print(f"  events clamped to the datum top (BSL depth < {args.datum_shift_km} km): "
+              f"{n_clamped:,} ({n_clamped/len(ev)*100:.1f}%)")
+    import json
+    (out_dir / "hypodd_datum.json").write_text(json.dumps({
+        "depth_datum": "seafloor" if args.datum_shift_km else "as_input",
+        "datum_shift_km": args.datum_shift_km,
+        "note": "hypoDD depths = input depth - datum_shift_km. Add it back for below-sea-level.",
+        "events_csv": str(ev_path), "picks_csv": str(pk_path),
+        "n_events": int(len(ev)), "n_phase_lines": int(n_used_picks),
+        "n_clamped_to_top": int(n_clamped)}, indent=2))
     print(f"  output dir: {out_dir}")
 
 

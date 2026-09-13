@@ -81,6 +81,29 @@ phase.dat
         p = run_dir / out
         print(f"  {p}: "
               f"{(p.stat().st_size if p.exists() else 0):,} bytes")
+    # ph2dt drops whole EVENTS (fewer than MINOBS usable phases), not just pairs,
+    # and never says so except in its log. Parse and report the loss, and refuse
+    # an empty dt.ct rather than letting hypoDD fail later with a worse message.
+    import re
+    log = log_path.read_text()
+    m_tot = re.search(r"events total\s*=\s*(\d+)", log)
+    m_sel = re.search(r"events selected\s*=\s*(\d+)", log)
+    n_tot = int(m_tot.group(1)) if m_tot else -1
+    n_sel = int(m_sel.group(1)) if m_sel else -1
+    if n_tot > 0 and n_sel >= 0:
+        print(f"  ph2dt kept {n_sel:,} of {n_tot:,} events "
+              f"({(n_tot-n_sel):,} dropped, {(n_tot-n_sel)/n_tot*100:.1f}%)")
+    else:
+        print("  [warn] could not parse event totals from ph2dt.log")
+    dtct = run_dir / "dt.ct"
+    if not dtct.exists() or dtct.stat().st_size == 0:
+        sys.exit("ph2dt produced no dt.ct -- nothing to relocate")
+    n_pairs = sum(1 for l in dtct.open() if l.startswith("#"))
+    print(f"  dt.ct: {n_pairs:,} event pairs")
+    import json
+    (run_dir / "ph2dt_summary.json").write_text(json.dumps(
+        {"events_total": n_tot, "events_selected": n_sel, "pairs": n_pairs,
+         "minobs": args.minobs, "maxsep_km": args.maxsep, "minlnk": args.minlnk}, indent=2))
 
 
 if __name__ == "__main__":

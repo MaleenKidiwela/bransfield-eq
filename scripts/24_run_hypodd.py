@@ -26,40 +26,49 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_BIN = Path("/home/jovyan/HypoDD/src/hypoDD/hypoDD")
 
 
-def write_velocity(csv_path: Path, run_dir: Path):
-    """Read configs/velocity_model.csv and return (n_layers, tops, vp, vs).
+def write_velocity(csv_path: Path, run_dir: Path, datum_shift_km: float = 0.0,
+                   max_layers: int = 30):
+    """Return (n_layers, tops, vp, vs) for hypoDD from configs/velocity_model.csv.
 
-    hypoDD IMOD=1 uses per-layer Vp/Vs (rather than a single fixed ratio), which
-    matters because the water layer has no S waves (Vs ~= 0, Vp/Vs >> 1.78). We
-    return the Vs list so the caller can write the per-layer ratio block.
-
-    csv columns: depth_km, vp_kms, vs_kms."""
+    - Rock only. The CSV carries a 1.3 km water column (vs=0.5 km/s). hypoDD flattens
+      every OBS to elevation 0, so the model must be on a SEAFLOOR datum: drop the
+      water rows and re-zero depth at `datum_shift_km` (the representative water depth
+      under the EVENTS, not the array), extending the first rock velocity up to 0.
+      Previously the water rows were kept, the vs<=0.05 guard never fired (vs=0.5), and
+      S waves were propagated through 'water' at Vp/Vs = 2.91.
+    - Layers merged by velocity CONTRAST, never by stride. The old code took every
+      other distinct-velocity row, which assigns each interval the velocity of its
+      shallower half (systematically slow, +138 ms over 0-31 km) and dropped the
+      1.3 km sediment layer outright.
+    - Missing model is an error, not a silent 5-layer continental default.
+    """
     if not csv_path.exists():
-        tops = [0.0, 2.0, 5.0, 15.0, 30.0]
-        vp   = [3.0, 5.0, 6.0, 6.5, 7.5]
-        vs   = [v / 1.78 for v in vp]
-        return len(tops), tops, vp, vs
+        raise SystemExit(f"velocity model not found: {csv_path} -- refusing to substitute a default")
     vm = pd.read_csv(csv_path)
     vp_col = "vp_kms" if "vp_kms" in vm.columns else "vp_km_s"
     vs_col = "vs_kms" if "vs_kms" in vm.columns else "vs_km_s"
     vm = vm.sort_values("depth_km").reset_index(drop=True)
-    # Collapse constant-vp sections to keep the model coarse.
-    keep = [0]
-    for i in range(1, len(vm)):
-        if vm[vp_col].iloc[i] != vm[vp_col].iloc[i-1]:
-            keep.append(i)
-    vm_layers = vm.iloc[keep].reset_index(drop=True)
-    # Cap to <= 15 layers but ALWAYS include the deepest entry so the model
-    # extends through the seismic-event depth range.
-    if len(vm_layers) > 15:
-        stride = max(1, len(vm_layers) // 15)
-        sub_idx = list(range(0, len(vm_layers), stride))
-        if sub_idx[-1] != len(vm_layers) - 1:
-            sub_idx.append(len(vm_layers) - 1)
-        vm_layers = vm_layers.iloc[sub_idx].reset_index(drop=True)
-    tops = vm_layers["depth_km"].tolist()
-    vp = vm_layers[vp_col].tolist()
-    vs = vm_layers[vs_col].tolist()
+    rock = vm[vm[vp_col] > 1.6].copy()                 # drop the water column
+    if datum_shift_km:
+        rock["depth_km"] = rock["depth_km"] - datum_shift_km
+        rock = rock[rock["depth_km"] >= 0.0]
+        top = rock.iloc[[0]].copy(); top["depth_km"] = 0.0   # extend first rock Vp to the datum
+        rock = pd.concat([top, rock], ignore_index=True)
+    else:
+        if rock["depth_km"].iloc[0] > 0:
+            top = rock.iloc[[0]].copy(); top["depth_km"] = 0.0
+            rock = pd.concat([top, rock], ignore_index=True)
+    # merge adjacent rows whose Vp differs by < 1%
+    tops, vp, vs = [float(rock.depth_km.iloc[0])], [float(rock[vp_col].iloc[0])], [float(rock[vs_col].iloc[0])]
+    for _, r in rock.iloc[1:].iterrows():
+        if abs(r[vp_col] - vp[-1]) / vp[-1] >= 0.01:
+            tops.append(float(r.depth_km)); vp.append(float(r[vp_col])); vs.append(float(r[vs_col]))
+    # if still too many, merge the smallest contrasts first (never by stride)
+    while len(tops) > max_layers:
+        j = min(range(1, len(vp)), key=lambda i: abs(vp[i] - vp[i-1]))
+        del tops[j]; del vp[j]; del vs[j]
+    assert all(b > a for a, b in zip(tops, tops[1:])), "layer tops not increasing"
+    assert all(v > 1.6 for v in vp), "water velocity leaked into the rock model"
     return len(tops), tops, vp, vs
 
 
@@ -159,25 +168,16 @@ def parse_reloc(path: Path) -> pd.DataFrame:
     return df
 
 
-def apply_depth_sanity_filter(df: pd.DataFrame, station_csv: Path) -> pd.DataFrame:
-    """Flag events whose depth is shallower than the local bathymetric depth.
-    Physically no event can be in the water column. We don't delete -- just
-    add a `physical` boolean column so downstream can decide what to do."""
-    try:
-        st = pd.read_csv(station_csv)
-        # Use median water_depth_m of OBS as a coarse seafloor depth check.
-        if "water_depth_m" in st.columns:
-            zx = st[st["network"] == "ZX"]
-            if len(zx) > 0:
-                median_seafloor_km = zx["water_depth_m"].median() / 1000.0
-                df["physical"] = df["dep"] >= median_seafloor_km
-                n_bad = (~df["physical"]).sum()
-                print(f"  depth-sanity: {n_bad:,} events shallower than median "
-                      f"seafloor ({median_seafloor_km:.2f} km) flagged physical=False")
-                return df
-    except Exception as e:
-        print(f"  depth-sanity filter skipped: {e}")
-    df["physical"] = True
+def apply_depth_sanity_filter(df: pd.DataFrame, datum_shift_km: float) -> pd.DataFrame:
+    """On a seafloor datum, 'physical' means depth >= 0 (below the representative
+    seafloor). Also write depth_bsl_km so downstream never has to guess the frame."""
+    df["depth_datum"] = "seafloor" if datum_shift_km else "as_input"
+    df["datum_shift_km"] = datum_shift_km
+    df["depth_bsl_km"] = df["dep"] + datum_shift_km
+    df["physical"] = df["dep"] >= 0.0
+    n_bad = int((~df["physical"]).sum())
+    print(f"  depth-sanity: {n_bad:,} events relocated above the datum "
+          f"(hypoDD 'airquakes'; physical=False). Datum = {datum_shift_km} km BSL.")
     return df
 
 
@@ -191,6 +191,9 @@ def main():
     ap.add_argument("--niter-ct", type=int, default=2)
     ap.add_argument("--niter-cc", type=int, default=2)
     ap.add_argument("--out-suffix", default="")
+    ap.add_argument("--datum-shift-km", type=float, default=None,
+                    help="seafloor datum used by script 22 (read from hypodd_datum.json if omitted)")
+    ap.add_argument("--max-layers", type=int, default=30, help="hypoDD MAXLAY is 50")
     args = ap.parse_args()
 
     run_dir = REPO / "hypodd" / args.label
@@ -206,8 +209,15 @@ def main():
         else:
             sys.exit(f"Need dt.cc with --with-xc; not found at {src}.")
 
-    n_lay, tops, vps, vss = write_velocity(REPO / args.velocity_csv, run_dir)
-    print(f"  velocity model: {n_lay} layers, tops {tops[0]:.2f}-{tops[-1]:.2f} km")
+    import json
+    shift = args.datum_shift_km
+    if shift is None:
+        dj = run_dir / "hypodd_datum.json"
+        shift = float(json.loads(dj.read_text())["datum_shift_km"]) if dj.exists() else 0.0
+    print(f"  depth datum: seafloor, shift {shift} km BSL" if shift else "  depth datum: as input")
+    n_lay, tops, vps, vss = write_velocity(REPO / args.velocity_csv, run_dir, shift, args.max_layers)
+    print(f"  velocity model: {n_lay} layers (rock only), tops {tops[0]:.2f}-{tops[-1]:.2f} km, "
+          f"Vp {min(vps):.2f}-{max(vps):.2f}")
     ctl = make_control(args.label, n_lay, tops, vps, vss,
                        args.with_xc, args.niter_ct, args.niter_cc)
     (run_dir / "hypoDD.inp").write_text(ctl)
@@ -234,7 +244,10 @@ def main():
     if not reloc.exists() or reloc.stat().st_size == 0:
         sys.exit(f"hypoDD did not produce {reloc}")
     df = parse_reloc(reloc)
-    df = apply_depth_sanity_filter(df, REPO / "catalogs" / "station_geometry.csv")
+    n_in = sum(1 for _ in (run_dir / "event.sel").open())
+    print(f"  events: {n_in:,} in event.sel -> {len(df):,} relocated "
+          f"({n_in-len(df):,} lost in hypoDD, {(n_in-len(df))/max(n_in,1)*100:.1f}%)")
+    df = apply_depth_sanity_filter(df, shift)
     out_csv = REPO / "catalogs" / f"hypodd_{args.label}{args.out_suffix}.csv"
     df.to_csv(out_csv, index=False)
     print(f"\nWrote {out_csv}  ({len(df):,} relocated events)")

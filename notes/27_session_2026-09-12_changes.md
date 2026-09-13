@@ -536,3 +536,54 @@ Commits 3ce7d58 and 1396ffd end with a "Co-Authored-By: Claude ..." trailer. Thi
 repo's standing rule (memory note, and the clean history before this session) is
 never to include one. Recorded here rather than rewriting history; no further
 commits carry it.
+
+---
+
+## I. hypoDD 1D baseline on the v4 standard tier (2026-09-13)
+
+Scope: relative relocation with **catalogue** differential times only (dt.ct). The
+cross-correlation rebuild (dt.cc) and the IMOD=9 3D experiment are later steps.
+
+### I1. Datum decision — seafloor, rigid shift of 1.0 km
+hypoDD clamps every negative station elevation to 0 (`getdata.f`) and `ray_3d.f`
+never reads elevation, so it cannot represent OBS at depth. The only consistent
+frame is a seafloor datum. **Shift = 1.0 km**, not the model's 1.3: the median
+water depth *under the events* is 1.02 km (they sit on the edifice), and a 1.3 km
+shift would have put 25.6% of events above the model top vs 8.8% at 1.0 km. The
+rock-only 1D model is shifted by the same 1.0 km with the first rock Vp extended
+to the datum. Relative geometry is preserved exactly (rigid shift); the residual
+error is the ±0.5 km bathymetric spread across the array, which double-difference
+cancels for close pairs. 871 events (9.2%) shallower than the datum start at 0.01
+km; IAQ=0 keeps them if the inversion pushes them back up. Output carries
+`depth_bsl_km = dep + 1.0` and `depth_datum` so nothing downstream guesses.
+
+Land stations are written at **+1.0 km + elevation** above the datum (IMOD=1
+honours positive elevation). Previously they were written at ~0 m, i.e. sitting
+on the seafloor 1 km too deep.
+
+### I2. Audited bugs fixed in 22 / 23 / 24
+- 22: depth read from `depth`/`z` — the NLLoc file has `depth_km`, so every
+  starting depth would have been **0.0**. Now `--depth-col` (auto-detected).
+- 22: numeric `origin_time` dispatch could never fire (numeric epochs parse to
+  valid 1970 timestamps, not NaT). Now dtype-dispatched, with a hard error if any
+  date parses before 2000. Same for pick times.
+- 22: picks dropped for tt≤0 / tt>60 s were silent → counted and printed
+  (200 / 0 here).
+- 23: ph2dt drops whole events below MINOBS and only says so in its log → parsed
+  and reported; empty dt.ct is now a hard error.
+- 24: velocity decimation took every other distinct-Vp row (systematically slow,
+  +138 ms over 0–31 km, sediment layer dropped) → rock-only, shifted, merged by
+  <1% Vp contrast, capped by smallest-contrast merging, monotonicity asserted.
+- 24: water rows kept with vs=0.5 so the vs≤0.05 "no-S" guard never fired and S
+  propagated through water at Vp/Vs 2.91 → water rows removed entirely.
+- 24: missing velocity model silently substituted a 5-layer continental default →
+  hard error.
+- 24: event.sel → reloc loss never reported → reported.
+
+### I3. Gates
+| gate | check | result |
+|---|---|---|
+| H1 | 9,517 headers; years 2019–20; depths ≥0.01; OBS elev 0; land +1000–1030 m; ids unique | PASS |
+| H2 | ph2dt 9,517 → 8,992 (5.5% < MINOBS); 462,024 pairs; 4.17M observations | PASS |
+| H3 | IMOD=1; 22 layers 0–30.3 km monotonic; Vp 2.35–7.00; Vp/Vs 1.78; no water, no 200 sentinel | PASS |
+| H4 | reloc count, airquakes, shift vs NLLoc start, rct | pending |
