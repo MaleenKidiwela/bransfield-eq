@@ -1378,3 +1378,20 @@ regression on v5: 79,783/79,783 slots identical to the positional mapping. This 
 class of failure as the 2026-05 v2 join bug (memory: nlloc_v2_join_bug) — positional joins
 are now gone from this script. The rebuilt v6 chain gates OT(v6)−OT(v5) (median < 1 s, <1%
 beyond 5 s) before anything downstream runs.
+
+### I35. Year v6 (content-mapped) and hypoDD 3D on the v6 tier
+v6 catalogue: 79,733 hyps matched to their own picks (50 unlocated events listed in
+`nlloc/output/year_v6/unmatched_obs_events.txt`), 79,723 parsed, 220 non-LOCATED. OT(v6)−OT(v5)
+median +0.269 s, p10/p90 −0.110/+0.464, 0.02% beyond 5 s (GATE OT PASS). Pinned 35.3 → 26.2%,
+depth p50 0.80 → 1.20 km, rms p50 0.271 → 0.272. Tiers 15,184 / 12,194 / 3,864 (v5: 8,552 /
+6,902 / 1,576) — the growth is events no longer forced above the seafloor.
+hypoDD 3D (IMOD=9 fine model, ISTART 2, DAMP 400) from v6 standard: 12,194 → ph2dt 11,644 →
+11,061 trial sources → 10,664 relocated (92%); RMSCT 174 → 59 ms, CND 159 → 137; slope of
+(DD−start) on start depth −0.192, Spearman 0.80, start p10/50/90 1.16/2.80/5.59 → DD
+0.77/2.91/4.88 km; QC: 1,317 (12%) above local seafloor, 256 poorly linked → **9,125 pass**,
+depth below local seafloor p10/50/90 0.15/2.15/3.89 km → `catalogs/hypodd_year_v6_3d_qc.csv`.
+Note for the write-up: hypoDD still shortens the depth axis by ~19% relative to v6 even
+though constant station terms cancel in differential times — the two estimators disagree on
+the depth scale at that level; that is the systematic depth uncertainty to quote, not a
+bug in either. Movies rendered (`nlloc_animation_year_v6_standard.mp4`,
+`hypodd3d_animation_year_v6_3d_qc.mp4`) but not delivered until the package is final.
