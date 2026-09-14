@@ -1352,3 +1352,13 @@ Gate passes (ratio 0.95–1.04) for invB-scale terms; rms is best for it1B (0.23
 **it1B delays + the script-66 guard** (so no event is lost to S-before-P). Confirmation run
 `abtest_v6_it1Bg` launched; year v6 control written (`year_v6.in` = v5 control + 76
 LOCDELAY lines, gated by diff; obs = year_v5.obs guarded with the same delays).
+
+### I33. Confirmation on the guarded sample and launch of year v6
+`abtest_v6_it1Bg` (it1B delays, obs guarded by script 66 — 407 S picks dropped in 299 events):
+1,992 located (v5 1,994), pinned 20.1% (28.5%), near P residual of the pinned set −0.129
+(−0.160), rms 0.238 (0.239), S−P pred/obs 2.94/3.09 = **0.95** (1.25), depth p10/50/90
+0.00/1.77/15.75 km; dz vs v5 by bin: 0.05–1 +0.59, 1–2 +0.66, 2–4 +0.09, 4–6 −1.09, 6–9 −1.84,
+9–15 −2.11 km. All gates met → year v6 launched: `year_v6.obs` = year_v5.obs guarded
+(20,140 S picks dropped in 13,979 of 79,783 events, 17.5%), `year_v6.in` = v5 control +
+76 LOCDELAY lines (diff-gated), ORCA_v5 grids, Vp/Vs 1.78; then 31 → 40 → hypoDD 3D on the
+v6 standard tier → 50/55 → movies, in one chained job.
