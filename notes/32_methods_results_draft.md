@@ -656,6 +656,25 @@ solutions isolates the binding constraints:
 | RMS < 0.7 s | 73,390 (92.3%) | N_phases ≥ 4 | 79,503 (100.0%) |
 | RMS < 0.5 s | 69,251 (87.1%) | N_phases ≥ 6 | 78,512 (98.8%) |
 | RMS < 0.3 s | 46,749 (58.8%) | N_phases ≥ 8 | 68,564 (86.2%) |
+
+**Picks per event.** The associated picks are evenly split between P and S: every located event
+carries at least three S picks (the associator requires ≥ 2 S and ≥ 3 P), and S makes up 50–53% of the
+picks in every tier. Counts below are the associated picks per event (p10 / p50 / p90) and the number
+of phases NLLoc actually used after the S-before-P guard (`n_phases`); on the standard tier the guard
+leaves the median event untouched (median 0 picks removed, mean 0.33; 22.5% of events lose at least
+one S pick).
+
+| set | events | P picks | S picks | P + S | stations | S fraction | phases used by NLLoc (p10/50/90, mean) |
+|---|---|---|---|---|---|---|---|
+| all located | 79,503 | 3 / 5 / 7 | 3 / 5 / 7 | 7 / 10 / 13 | 4 / 7 / 9 | 50% | 7 / 10 / 13, 10.0 |
+| loose | 15,184 | 3 / 5 / 8 | 4 / 6 / 8 | 8 / 11 / 15 | 5 / 7 / 10 | 52% | 7 / 11 / 15, 11.1 |
+| standard | 12,194 | 4 / 5 / 8 | 4 / 6 / 9 | 8 / 11 / 16 | 5 / 7 / 11 | 52% | 8 / 11 / 16, 11.4 |
+| strict | 3,864 | 4 / 6 / 9 | 5 / 7 / 10 | 9 / 13 / 19 | 6 / 8 / 12 | 53% | 9 / 12 / 19, 13.3 |
+| relative catalogue (QC-pass) | 9,125 | 4 / 5 / 8 | 4 / 6 / 9 | 9 / 11 / 16 | 5 / 7 / 11 | 52% | — |
+
+Mean picks per event: P 5.1 / S 5.1 (all located), P 5.7 / S 6.1 (standard), P 6.3 / S 7.1 (strict).
+Source: `catalogs/pyocto_picks_year_newpool_no_shots.csv` joined to the tier files on `event_idx`
+(relative catalogue: hypoDD id = event_idx + 1); computed 2026-09-14.
 | σz < 2 km | 50,483 (63.5%) | inside the OBS hull | 44,912 (56.5%) |
 
 The binding constraints are **azimuthal gap** (only 29.6% of solutions fall below 200°, 8.8% below
