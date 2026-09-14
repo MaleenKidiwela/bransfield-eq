@@ -71,8 +71,8 @@ def main() -> None:
     ap.add_argument("--restrict-to", help="CSV of event_idx to restrict to (e.g. NLLoc sigma_z<=0.5)")
     ap.add_argument("--label", default="")
     ap.add_argument("--delays", default=None,
-                    help="LOCDELAY file: subtract (S delay - P delay) per station from the OBSERVED S-P, so a
-                         catalogue located with station delays is scored consistently")
+                    help="LOCDELAY file: subtract (S delay - P delay) per station from the OBSERVED S-P, "
+                         "so a catalogue located with station delays is scored consistently")
     ap.add_argument("--scorer-vpvs", type=float, default=None,
                     help="fix the scorer Vp/Vs (e.g. Wadati 1.88) so runs differ only by positions")
     args = ap.parse_args()
