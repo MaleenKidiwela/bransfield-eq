@@ -1408,3 +1408,9 @@ linked → **8,005 pass**, depth below local seafloor p10/50/90 0.20/2.32/4.10 k
 `catalogs/hypodd_year_v6_3d_xc_qc.csv`. Recommendation: `hypodd_year_v6_3d_qc.csv`
 (9,125) for completeness of the relative catalogue; `_xc_qc.csv` (8,005) for cluster-scale
 geometry where the cc data tighten the well-linked core.
+
+### G9 follow-up (2026-09-14). History rewritten before the first push
+The two commits that carried a Co-Authored-By trailer (then 3ce7d58 and 1396ffd) were rewritten
+with `git filter-branch --msg-filter` over the unpushed range `origin/main..HEAD` (63 commits)
+before anything was pushed, so no trailer ever reached GitHub. Every commit hash quoted in this
+log up to this point refers to the pre-rewrite id; content is unchanged. Pushed as 06cf895..4092501.
