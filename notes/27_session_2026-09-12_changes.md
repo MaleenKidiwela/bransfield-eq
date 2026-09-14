@@ -1395,3 +1395,16 @@ though constant station terms cancel in differential times — the two estimator
 the depth scale at that level; that is the systematic depth uncertainty to quote, not a
 bug in either. Movies rendered (`nlloc_animation_year_v6_standard.mp4`,
 `hypodd3d_animation_year_v6_3d_qc.mp4`) but not delivered until the package is final.
+
+### I36. Cross-correlation refinement of the v6 hypoDD 3D catalogue (cc ≥ 0.8)
+Correlator (script 63) on the v6 pairs: 36.2 min wall, 473 GB read, 6 workers; dt.cc
+103,056 rows in 64,994 pairs (P 55,463 rows, cc p50 0.860, dt.cc − dt.ct median +2.0 ms,
+MAD 55 ms; S 47,593, cc p50 0.847, +4.4 ms, MAD 51 ms). hypoDD IMOD=9 ct+cc (script 24
+`--with-xc`, positive cc warm-up weights, OBSCC 0): 11,061 trial sources → 9,378 relocated
+(81%; 19.5% lost, vs 8.4% ct-only — the cc-weighted sets drop weakly linked events);
+RMSCT 174 → 106 ms, RMSCC 189 → 1 ms, CND 160 → 129; slope −0.128 (ct-only −0.192),
+Spearman 0.876, median |dz| 0.45 km. QC: 894 (9.5%) above local seafloor, 689 poorly
+linked → **8,005 pass**, depth below local seafloor p10/50/90 0.20/2.32/4.10 km →
+`catalogs/hypodd_year_v6_3d_xc_qc.csv`. Recommendation: `hypodd_year_v6_3d_qc.csv`
+(9,125) for completeness of the relative catalogue; `_xc_qc.csv` (8,005) for cluster-scale
+geometry where the cc data tighten the well-linked core.
