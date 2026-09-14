@@ -1329,3 +1329,26 @@ i.e. for the nearest events the constant S delay overshoots, consistent with VEL
 terms being inflated by its low Vp/Vs layers. Scan launched: S−P term scaled by
 α = 0.4 / 0.6 / 0.8 of invB (P terms unchanged), guarded obs, same gates; pick the α that
 passes gate 4 with the fewest dropped picks and rms ≤ v5.
+
+### I32. Sample scan of station-term variants (script 67; all scored with each run's own delays)
+| run | located | pinned | near P (pinned) | rms | S−P pred/obs | ratio | z p10/50/90 | dz 4–6 | dz 6–9 | dz 9–15 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| v5 (no terms) | 1994 | 28.5% | −0.160 | 0.239 | 3.51/2.80 | 1.25 | 0.00/1.20/19.2 | 0 | 0 | 0 |
+| it0 invA | 1906 | 24.4% | −0.170 | 0.258 | 3.14/2.58 | 1.22 | 0.00/1.68/19.1 | −0.34 | −0.76 | −1.02 |
+| it2 invA+2 refinements | 1874 | 23.2% | −0.138 | 0.234 | 3.26/2.66 | 1.23 | 0.00/1.70/18.7 | −0.59 | −0.79 | −0.98 |
+| it0B invB | 1743 | 18.4% | −0.129 | 0.257 | 3.00/3.08 | 0.97 | 0.01/2.40/19.6 | −1.09 | −2.04 | −2.51 |
+| **it1B invB+1 refinement** | 1775 | 18.9% | −0.127 | **0.237** | 3.14/3.04 | **1.03** | 0.01/2.09/17.8 | −1.10 | −1.83 | −2.11 |
+| it0B, Vp/Vs 1.70 | 1751 | 25.4% | −0.151 | 0.258 | 2.89/2.83 | 1.02 | 0.00/1.87/19.5 | −1.17 | −1.91 | −1.75 |
+| α0.4 (guarded) | 1993 | 23.9% | −0.164 | 0.251 | 3.09/2.75 | 1.12 | 0.00/1.60/18.0 | −0.63 | −1.04 | −1.07 |
+| α0.6 (guarded) | 1994 | 22.2% | −0.148 | 0.252 | 2.93/2.83 | 1.04 | 0.00/1.66/17.4 | −0.76 | −1.45 | −1.57 |
+| α0.8 (guarded) | 1997 | 21.0% | −0.137 | 0.254 | 2.85/3.01 | 0.95 | 0.00/1.87/16.9 | −0.88 | −1.73 | −2.05 |
+| Vp/Vs 1.70 + α0.4 | 1994 | 34.7% | −0.177 | 0.256 | 3.24/2.88 | 1.13 | 0.00/0.86/17.1 | −0.49 | −0.63 | −0.12 |
+| Vp/Vs 1.70, no terms | 1997 | 38.2% | −0.162 | 0.249 | 3.22/2.34 | **1.38** | 0.00/0.65/20.0 | +0.22 | +0.75 | +1.22 |
+
+Reading: bulk Vp/Vs 1.70 alone makes everything worse (ratio 1.38, pinning 38%) — the
+lever is the per-station S term, not the ratio; the user's P model and Vp/Vs 1.78 stay.
+Gate passes (ratio 0.95–1.04) for invB-scale terms; rms is best for it1B (0.237 ≤ v5's
+0.239) because one NLLoc refinement fits the terms to the 3D model. Chosen for the year:
+**it1B delays + the script-66 guard** (so no event is lost to S-before-P). Confirmation run
+`abtest_v6_it1Bg` launched; year v6 control written (`year_v6.in` = v5 control + 76
+LOCDELAY lines, gated by diff; obs = year_v5.obs guarded with the same delays).
