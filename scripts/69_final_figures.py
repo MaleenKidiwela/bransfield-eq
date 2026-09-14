@@ -336,76 +336,73 @@ def fig1():
 def fig2():
     strict = load_tier("strict")
     hdd = load_hypodd()
-    HALF = 15.0
+    HALF, SWATH = 15.0, 5.0
+    # Grid axes of the tomography (TRANS SIMPLE, RotCW 36): +x = N54E (along the rift), +y = N36W (across).
+    AZ = {"ne": 54.0, "nw": -36.0}
+    def unit(az): a = np.radians(az); return np.sin(a), np.cos(a)       # (east, north)
+    def rot(e, n, axis):
+        ue, un = unit(AZ[axis]); ve, vn = unit(AZ["nw" if axis == "ne" else "ne"])
+        return e * ue + n * un, e * ve + n * vn                          # along, across
 
     def prof_bathy(axis):
-        """Seafloor along the W-E (axis='we') or S-N (axis='sn') line through the centre."""
-        s = np.linspace(-HALF, HALF, 400)
-        if axis == "we":
-            lat = np.full_like(s, CLAT)
-            lon = CLON + s / kmperdeglon(CLAT)
-        else:
-            lat = CLAT + s / KM_PER_DEG_LAT
-            lon = np.full_like(s, CLON)
+        """Seafloor along the section line through the centre (grid-axis orientation)."""
+        s = np.linspace(-HALF, HALF, 400); ue, un = unit(AZ[axis])
+        lat = CLAT + s * un / KM_PER_DEG_LAT
+        lon = CLON + s * ue / kmperdeglon(CLAT)
         pad = 0.03
         _, _, _, pf = bathymetry(lat.min() - pad, lat.max() + pad,
                                  lon.min() - pad, lon.max() + pad, n=400)
         return s, pf(lat, lon)
 
+    NAME = {"ne": "SW-NE (along rift, N54E)", "nw": "SE-NW (across rift, N36W)"}
     panels = [
-        ("we", strict.lat.values, strict.lon.values, strict.depth_km.values,
-         "NLLoc strict tier", TIER_COLOR["strict"]),
-        ("sn", strict.lat.values, strict.lon.values, strict.depth_km.values,
-         "NLLoc strict tier", TIER_COLOR["strict"]),
-        ("we", hdd.lat.values, hdd.lon.values, hdd.depth_bsl_km.values,
-         "hypoDD 3D QC-pass", TIER_COLOR["hypodd"]),
-        ("sn", hdd.lat.values, hdd.lon.values, hdd.depth_bsl_km.values,
-         "hypoDD 3D QC-pass", TIER_COLOR["hypodd"]),
+        ("ne", strict.lat.values, strict.lon.values, strict.depth_km.values, "NLLoc strict tier", TIER_COLOR["strict"]),
+        ("nw", strict.lat.values, strict.lon.values, strict.depth_km.values, "NLLoc strict tier", TIER_COLOR["strict"]),
+        ("ne", hdd.lat.values, hdd.lon.values, hdd.depth_bsl_km.values, "hypoDD 3D QC-pass", TIER_COLOR["hypodd"]),
+        ("nw", hdd.lat.values, hdd.lon.values, hdd.depth_bsl_km.values, "hypoDD 3D QC-pass", TIER_COLOR["hypodd"]),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(11.2, 7.6), sharex=True, sharey=True)
     counts = {}
     for ax, (axis, lat, lon, dep, lab, col) in zip(axes.ravel(), panels):
         e, n = ll_to_km(lat, lon)
-        inbox = (np.abs(e) <= HALF) & (np.abs(n) <= HALF) & np.isfinite(dep)
-        s = e[inbox] if axis == "we" else n[inbox]
-        ax.scatter(s, dep[inbox], s=4.5, c=col, alpha=0.40, lw=0, zorder=3)
+        along, across = rot(e, n, axis)
+        inbox = (np.abs(along) <= HALF) & (np.abs(across) <= SWATH) & np.isfinite(dep)
+        ax.scatter(along[inbox], dep[inbox], s=4.5, c=col, alpha=0.40, lw=0, zorder=3)
         sb, wb = prof_bathy(axis)
         ax.plot(sb, wb, color=C["black"], lw=1.6, zorder=4)
         ax.fill_between(sb, 0, wb, color="#dbeaf5", zorder=0)
-        ax.set_title(f"{lab} - {'W-E' if axis == 'we' else 'S-N'} "
-                     f"(n = {int(inbox.sum()):,})", fontsize=11)
+        ax.set_title(f"{lab} - {NAME[axis]} (n = {int(inbox.sum()):,})", fontsize=10.5)
         counts[(lab, axis)] = int(inbox.sum())
     for ax in axes.ravel():
         ax.set_xlim(-HALF, HALF)
         ax.set_ylim(12, -0.4)
     for ax in axes[1]:
-        ax.set_xlabel("distance from -62.4413/-58.44 (km)")
+        ax.set_xlabel("distance along the section through -62.4413/-58.44 (km)")
     for ax in axes[:, 0]:
         ax.set_ylabel("depth below sea level (km)")
-    axes[0, 0].annotate("W", (0.015, 0.92), xycoords="axes fraction", fontweight="bold")
-    axes[0, 0].annotate("E", (0.975, 0.92), xycoords="axes fraction", fontweight="bold")
-    axes[0, 1].annotate("S", (0.015, 0.92), xycoords="axes fraction", fontweight="bold")
-    axes[0, 1].annotate("N", (0.975, 0.92), xycoords="axes fraction", fontweight="bold")
+    axes[0, 0].annotate("SW", (0.015, 0.92), xycoords="axes fraction", fontweight="bold")
+    axes[0, 0].annotate("NE", (0.955, 0.92), xycoords="axes fraction", fontweight="bold")
+    axes[0, 1].annotate("SE", (0.015, 0.92), xycoords="axes fraction", fontweight="bold")
+    axes[0, 1].annotate("NW", (0.955, 0.92), xycoords="axes fraction", fontweight="bold")
     axes[0, 0].plot([], [], color=C["black"], lw=1.6, label="seafloor along the section")
     axes[0, 0].legend(loc="lower left", framealpha=0.9)
-    fig.suptitle("F2  Depth sections through the NLLoc projection origin "
-                 "(+/- 15 km box, all events projected)", y=0.985)
+    fig.suptitle(f"F2  Depth sections along the tomography grid axes (+/-{HALF:g} km, swath +/-{SWATH:g} km)", y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.965))
 
     CAPTIONS["F2"] = (
-        f"**F2 - depth sections.** Hypocentres inside a +/-15 km box centred on the NLLoc "
-        f"projection origin (-62.4413, -58.44), projected onto a W-E (left) and a S-N "
-        f"(right) vertical plane; every event in the box is shown in both panels. Top row: "
-        f"NLLoc strict tier ({counts[('NLLoc strict tier', 'we')]:,} of "
+        f"**F2 - depth sections.** Hypocentres within +/-15 km along and +/-5 km across two vertical sections "
+        f"through the NLLoc projection origin (-62.4413, -58.44), oriented along the tomography "
+        f"grid axes: SW-NE (N54E, along the Bransfield rift; left) and SE-NW (N36W, across it; right). Top row: "
+        f"NLLoc strict tier ({counts[('NLLoc strict tier', 'ne')]:,} of "
         f"{len(strict):,} events in the box). Bottom row: the hypoDD 3D double-difference "
         f"relocation of the standard tier, QC-pass only "
-        f"({counts[('hypoDD 3D QC-pass', 'we')]:,} of {len(hdd):,}), plotted on its "
+        f"({counts[('hypoDD 3D QC-pass', 'ne')]:,} of {len(hdd):,}), plotted on its "
         f"depth_bsl_km column so both rows share the sea-level datum. The black line is "
         f"the seafloor sampled along the section line from the same bathymetry as F1, and "
         f"the pale band above it is the water column. All four panels share identical "
         f"axes. Events plotted above the black line are not in the water: the profile is "
         f"the seafloor ON the section line, while the points are projected onto it from up "
-        f"to 15 km off-line, where the seafloor is deeper (510 of the {len(hdd):,} hypoDD "
+        f"to 5 km off-line, where the seafloor is deeper (510 of the {len(hdd):,} hypoDD "
         f"events, 5.6%, do sit up to 0.20 km above their own local seafloor, which is the "
         f"half-grid-cell tolerance the QC allows). Seismicity is concentrated in the upper "
         f"~5 km beneath the edifice; the "

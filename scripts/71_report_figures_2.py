@@ -1268,8 +1268,10 @@ def g14():
         ax.annotate(r.station, (r.longitude, r.latitude), textcoords="offset points",
                     xytext=(6, 5), fontsize=7, zorder=7,
                     bbox=dict(fc="white", ec="none", alpha=0.65, pad=0.6))
-    ax.axhline(CLAT, color="k", lw=1.2, ls="--", zorder=4)
-    ax.axvline(CLON, color="k", lw=1.2, ls=":", zorder=4)
+    # section traces along the tomography grid axes: +x = N54E (along rift), +y = N36W (across)
+    for az, ls in ((54.0, "--"), (-36.0, ":")):
+        ue, un = np.sin(np.radians(az)), np.cos(np.radians(az)); ss = np.array([-HALF, HALF])
+        ax.plot(CLON + ss * ue / kmperdeglon(CLAT), CLAT + ss * un / KM_PER_DEG_LAT, color="k", lw=1.2, ls=ls, zorder=4)
     ax.set_xlim(lon0, lon1)
     ax.set_ylim(lat0, lat1)
     ax.set_aspect(1.0 / np.cos(np.radians(CLAT)))
@@ -1284,42 +1286,41 @@ def g14():
     ax.legend(handles=[
         Line2D([], [], marker="^", ls="", ms=10, color="white", markeredgecolor="k",
                label="ZX OBS"),
-        Line2D([], [], color="k", lw=1.2, ls="--", label="section b-b' (W-E)"),
-        Line2D([], [], color="k", lw=1.2, ls=":", label="section c-c' (S-N)"),
+        Line2D([], [], color="k", lw=1.2, ls="--", label="section b-b' (SW-NE, along rift, N54E)"),
+        Line2D([], [], color="k", lw=1.2, ls=":", label="section c-c' (SE-NW, across rift, N36W)"),
         Line2D([], [], color=C["grey"], lw=0.8, label="bathymetry, 100 m"),
     ], loc="upper left", framealpha=0.93, fontsize=8.5)
 
-    # (b) W-E and (c) S-N sections
-    for pi, tag in enumerate(("b", "c")):
+    # (b) SW-NE (along rift) and (c) SE-NW (across rift) sections, grid-axis orientation
+    SWATH = 3.0
+    def unit(az): a = np.radians(az); return np.sin(a), np.cos(a)
+    for pi, (tag, az, az_x, name, ends) in enumerate((("b", 54.0, -36.0, "SW-NE (along rift, N54E)", ("SW", "NE")),
+                                                       ("c", -36.0, 54.0, "SE-NW (across rift, N36W)", ("SE", "NW")))):
         axs = fig.add_subplot(gs[1, pi])
-        if tag == "b":
-            along, across, name = e, n_, "W-E"
-            prof_lat = np.full(400, CLAT)
-            prof_lon = CLON + np.linspace(-HALF, HALF, 400) / kmperdeglon(CLAT)
-            s_along, s_across = obs.e.values, obs.n.values
-        else:
-            along, across, name = n_, e, "S-N"
-            prof_lat = CLAT + np.linspace(-HALF, HALF, 400) / KM_PER_DEG_LAT
-            prof_lon = np.full(400, CLON)
-            s_along, s_across = obs.n.values, obs.e.values
-        m = np.abs(across) <= HALF
+        ue, un = unit(az); xe, xn = unit(az_x)
+        along, across = e * ue + n_ * un, e * xe + n_ * xn
+        s_along, s_across = obs.e.values * ue + obs.n.values * un, obs.e.values * xe + obs.n.values * xn
+        dline = np.linspace(-HALF, HALF, 400)
+        prof_lat = CLAT + dline * un / KM_PER_DEG_LAT
+        prof_lon = CLON + dline * ue / kmperdeglon(CLAT)
+        m = (np.abs(across) <= SWATH) & (np.abs(along) <= HALF)
         axs.scatter(along[m], z[m], s=3.6, c=t_days[m], cmap=cmap, vmin=vmin, vmax=vmax,
                     lw=0, zorder=3)
         prof = pf(prof_lat, prof_lon)
-        dline = np.linspace(-HALF, HALF, 400)
         axs.fill_between(dline, 0, prof, facecolor="#dceaf6", zorder=1)
         axs.plot(dline, prof, color=C["black"], lw=1.8, zorder=5, label="seafloor")
-        ms = np.abs(s_across) <= HALF
+        ms = (np.abs(s_across) <= SWATH) & (np.abs(s_along) <= HALF)
         axs.scatter(s_along[ms], obs.water_km.values[ms], marker="^", s=95, c="white",
                     edgecolor="k", lw=0.9, zorder=6, clip_on=False,
-                    label=f"ZX OBS ({int(ms.sum())})")
+                    label=f"ZX OBS within the swath ({int(ms.sum())})")
         axs.axvline(0, color=C["grey"], lw=1.0, ls="--", zorder=2)
         axs.set_xlim(-HALF, HALF)
         axs.set_ylim(ZMAX, 0)
-        axs.set_xlabel(f"distance along {name} through {CLAT}/{CLON} (km)")
+        axs.set_xlabel(f"distance along the section through {CLAT}/{CLON} (km)")
         axs.set_ylabel("depth below sea level (km)")
-        axs.set_title(f"({tag})  {name} section, |offset| <= {HALF:g} km "
-                      f"({int(m.sum()):,} events)", loc="left")
+        axs.set_title(f"({tag})  {name}, swath +/-{SWATH:g} km ({int(m.sum()):,} events)", loc="left", fontsize=10)
+        axs.annotate(ends[0], (0.015, 0.92), xycoords="axes fraction", fontweight="bold")
+        axs.annotate(ends[1], (0.94, 0.92), xycoords="axes fraction", fontweight="bold")
         axs.legend(loc="lower right", framealpha=0.93, fontsize=8.5)
 
     from scipy.spatial import cKDTree
@@ -1335,8 +1336,9 @@ def g14():
         f"{int(keep.sum()):,} events within +/-{HALF:g} km of the NLLoc projection origin "
         f"{CLAT}/{CLON} (grey dots: the {int((~keep).sum()):,} outside the frame), over "
         f"the 30 m Orca bathymetry contoured every 100 m, with the ZX OBS and the traces "
-        f"of the two sections. (b) W-E and (c) S-N sections through the same origin, each "
-        f"taking events within +/-{HALF:g} km of the section line, with the seafloor "
+        f"of the two sections, oriented along the tomography grid axes. (b) SW-NE (N54E, along the "
+        f"Bransfield rift) and (c) SE-NW (N36W, across it) sections through the same origin, each "
+        f"taking events within +/-3 km of the section line, with the seafloor "
         f"profile sampled from the same bathymetry and the OBS at their true depths. The "
         f"median nearest-neighbour 3D separation of this catalogue is {nnm:.3f} km, the "
         f"scale at which the lineations and sub-clusters in these panels are resolved. "
