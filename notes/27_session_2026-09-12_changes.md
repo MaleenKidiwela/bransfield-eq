@@ -1304,3 +1304,28 @@ few readings) ran away to −2.06 s over the iterations → script 65 now clips 
 and requires ≥ 50 readings. Script 52 gained `--delays` so the S−P gate is scored
 consistently for delay-located catalogues (first version wrongly keyed stations with the
 network prefix → +0.000 correction; fixed).
+
+### I31. Joint-inversion station terms in NLLoc pass the S−P gate; the S-before-P failure explained
+Sample runs with VELEST invB terms (P −0.54…+0.19, S −0.65…+1.00 s; OBS S−P mean +0.54):
+
+| | v5 | it0B (invB, Vp/Vs 1.78) | it0B_170 (invB, Vp/Vs 1.70) |
+|---|---|---|---|
+| located | 1,994 | 1,743 | 1,751 |
+| top-pinned | 28.5% | **18.4%** | 25.4% |
+| near P residual, pinned set | −0.160 | −0.129 | −0.151 s |
+| rms p50 | 0.239 | 0.257 | 0.258 s |
+| S−P spread pred vs obs (delay-consistent) | 3.51 vs 2.80 (1.25) | **3.00 vs 3.08 (0.97)** | 2.89 vs 2.83 (1.02) |
+| depth p10/50/90 | 0.00/1.20/19.2 | 0.01/2.40/19.5 | 0.00/1.87/19.5 km |
+
+it0B vs v5 by v5 depth bin: 0.05–1 km +0.79, 1–2 +0.78, 2–4 +0.16, 4–6 −1.09, 6–9 −2.04,
+9–15 −2.51 km. The gate that resisted five model changes passes with station S terms
+alone (Vp/Vs kept at 1.78 — the user's P model untouched). Costs: rms p50 up 0.018 s, and
+12.5% of events fail. Failure mechanism found with single-event tests: NLLoc applies
+obs − delay, so where the S delay exceeds the observed S−P (BRA13: S−P 0.286 s, delay
+0.43 s) the S lands before its P and NLLoc aborts the event ("cannot find companion
+arrival"); delay 0.20 s locates. Script 66 drops such S picks beforehand (corrected
+S−P ≤ 0.05 s): with invB terms that is 438 S picks in 317 of 2,000 events (15.8%) —
+i.e. for the nearest events the constant S delay overshoots, consistent with VELEST's
+terms being inflated by its low Vp/Vs layers. Scan launched: S−P term scaled by
+α = 0.4 / 0.6 / 0.8 of invB (P terms unchanged), guarded obs, same gates; pick the α that
+passes gate 4 with the fewest dropped picks and rms ≤ v5.
