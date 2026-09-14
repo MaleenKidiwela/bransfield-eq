@@ -32,7 +32,8 @@ def main():
     ap.add_argument("--velest-csv")
     ap.add_argument("--from-hyp-dir")
     ap.add_argument("--base", help="existing LOCDELAY file to add residual medians to")
-    ap.add_argument("--min-readings", type=int, default=20)
+    ap.add_argument("--min-readings", type=int, default=50)
+    ap.add_argument("--max-abs", type=float, default=1.0, help="clip |delay| (s); far land stations with few, partly mis-associated picks otherwise run away (TOW reached -2.06 s)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     delays, nread = {}, {}
@@ -60,6 +61,10 @@ def main():
                 delays[(sta, pha)] = delays.get((sta, pha), 0.0) + float(r["median"]); nread[(sta, pha)] = int(r["size"]); upd += 1
         print(f"residual update from {a.from_hyp_dir}: {upd} station/phase terms (>= {a.min_readings} readings); "
               f"|median residual| p50 {med['median'].abs().median():.3f} s, max {med['median'].abs().max():.3f} s")
+    clipped = {k: max(-a.max_abs, min(a.max_abs, v)) for k, v in delays.items()}
+    nclip = sum(1 for k in delays if clipped[k] != delays[k])
+    if nclip: print(f"clipped {nclip} delays to +-{a.max_abs} s: {[k for k in delays if clipped[k] != delays[k]]}")
+    delays = clipped
     lines = [f"LOCDELAY {sta:<6s} {pha} {nread.get((sta, pha), 1):4d} {v:8.4f}" for (sta, pha), v in sorted(delays.items())]
     Path(a.out).write_text("\n".join(lines) + "\n")
     v = np.array(list(delays.values()))

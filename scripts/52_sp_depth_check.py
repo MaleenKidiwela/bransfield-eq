@@ -70,6 +70,9 @@ def main() -> None:
     ap.add_argument("--max-sta-km", type=float, default=4.0)
     ap.add_argument("--restrict-to", help="CSV of event_idx to restrict to (e.g. NLLoc sigma_z<=0.5)")
     ap.add_argument("--label", default="")
+    ap.add_argument("--delays", default=None,
+                    help="LOCDELAY file: subtract (S delay - P delay) per station from the OBSERVED S-P, so a
+                         catalogue located with station delays is scored consistently")
     ap.add_argument("--scorer-vpvs", type=float, default=None,
                     help="fix the scorer Vp/Vs (e.g. Wadati 1.88) so runs differ only by positions")
     args = ap.parse_args()
@@ -90,6 +93,14 @@ def main() -> None:
     P = pk[pk.phase == "P"][["event_idx", "station", "time"]].rename(columns={"time": "tp"})
     S = pk[pk.phase == "S"][["event_idx", "station", "time"]].rename(columns={"time": "ts"})
     sp = P.merge(S, on=["event_idx", "station"]); sp["sp_obs"] = sp.ts - sp.tp
+    if args.delays:
+        dl = {}
+        for l in Path(args.delays).read_text().split("\n"):
+            f = l.split()
+            if len(f) == 5 and f[0] == "LOCDELAY": dl[(f[1], f[2])] = float(f[4])
+        corr = sp.station.map(lambda st: dl.get((st, "S"), 0.0) - dl.get((st, "P"), 0.0))
+        sp["sp_obs"] = sp.sp_obs - corr
+        print(f"  observed S-P corrected by station (S-P) delays from {args.delays}: median correction {corr.median():+.3f} s")
     sp = sp[(sp.sp_obs > 0) & (sp.sp_obs < 10)]
     st = pd.read_csv(REPO / "catalogs" / "station_geometry.csv"); st["station"] = st.network + "." + st.station
     st["z_sta_bsl"] = np.where(st.on_seafloor, st.water_depth_m / 1000.0, -st.elevation_m / 1000.0)
