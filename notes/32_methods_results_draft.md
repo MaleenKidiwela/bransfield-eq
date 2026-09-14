@@ -112,6 +112,8 @@ twelve models; panel (b) pick-time residual distributions (bias and MAD) for the
 models; panel (c) recall of the exhaustive model pools against picks per station-day, with the
 adopted pool marked. Source: `notes/picker_benchmark.html` and the benchmark metrics behind it.
 
+**Figure 3:** Example events: raw picker output, associated picks and analyst picks. Four strict-tier events (a shallow caldera event at 1.41 km below the seafloor, a deeper event at 4.39 km, a small eight-phase event, and an event from the analyst's trusted window) shown as 3–20 Hz vertical-component record sections of the nearest stations. Faded dotted ticks: every pick the two pickers produced in the window (P above the trace, S below); solid ticks: the picks pyocto associated to the event; black dashed ticks: the analyst's manual picks; thin grey: the final predicted arrival times. Across the four windows 161 raw picks were reduced to 78 associated picks, the surplus being the two pickers detecting the same arrival and unassociated detections; automatic minus manual pick-time medians are 45, 30, 35 and 46 ms. Produced by `scripts/72_example_waveforms.py`.
+
 ## 3. Association
 
 Phase association used pyocto with a 1D reference velocity model (`configs/velocity_model.csv`;
@@ -230,13 +232,13 @@ than corrected: one inside the filled water column, where both solvers disagree 
 (+68.9 ms, n = 452), so the tracer rather than the grid is the suspect. All other stations agree with
 the tracer to within −13.6 to +13.3 ms.
 
-**Figure 3:** Velocity model. Panel (a) map of the un-sheared model at 2 km below sea
+**Figure 4:** Velocity model. Panel (a) map of the un-sheared model at 2 km below sea
 level with the 1000 m bathymetric contour; panels (b–c) two orthogonal cross-sections through the
 caldera showing the seafloor surface, the resolved depth interval (to 4 km below seafloor) shaded,
 and the OBS at their true depths. Produced by `scripts/37_plot_velocity_slice.py` on the grid built
 by `scripts/41_build_unsheared_velgrid.py`.
 
-**Figure 4:** Forward-model verification. Travel-time difference against source–receiver
+**Figure 5:** Forward-model verification. Travel-time difference against source–receiver
 distance for (a) the finite-difference grids minus the fast-marching grids on real paths, (b) the
 pseudo-bending tracer minus the fast-marching grids, and (c) per-station offsets of each solver
 against the vertical slowness integral. Produced by `scripts/58_eikonal_check.py` and
@@ -419,13 +421,13 @@ residual of the pinned population from −0.160 to −0.129 s, and brings the S�
 **0.95** on the guarded confirmation run, with no loss of located events (1,992 of 2,000 against
 1,994 for the reference run).
 
-**Figure 5:** Station terms. Panel (a) map of the array with P and S delay terms as scaled
+**Figure 6:** Station terms. Panel (a) map of the array with P and S delay terms as scaled
 symbols; panel (b) OBS P term against water depth with the r = +0.71 regression; panel (c) observed
 nearest-station S−P against hypocentral distance with the fitted line, the zero-distance intercept,
 and the slopes expected for Vp/Vs = 1.78 at Vp = 3, 5 and 6 km/s. Produced by
 `scripts/65_make_locdelay.py` output and `scripts/68_manual_sp_vs_delays.py`.
 
-**Figure 6:** Gate protocol. Predicted against observed nearest-station S−P by depth bin,
+**Figure 7:** Gate protocol. Predicted against observed nearest-station S−P by depth bin,
 for the reference run without station terms and for the adopted run, with the spread ratio
 annotated. Produced by `scripts/52_sp_depth_check.py` driven by `scripts/67_gate_table.py`.
 
@@ -548,7 +550,7 @@ staged. Separately, the pair-linking threshold is the **sum** of the catalogue a
 minimum-observation parameters, so raising the correlation minimum from 0 to 8 raises the linking
 threshold from 8 to 16 and drops 98.5% of pairs from the clustering.
 
-**Figure 7:** Cross-correlation. Panel (a) coefficient distribution for true and null pairs with the
+**Figure 8:** Cross-correlation. Panel (a) coefficient distribution for true and null pairs with the
 purity curve and the adopted threshold; panel (b) dt.cc − dt.ct against coefficient, binned, for P
 and S; panel (c) nearest-neighbour separation against correlation link count for the refined
 solution. Produced by `scripts/63_xcorr_dtcc.py` and `scripts/64_run_hypodd_xc.sh`.
@@ -606,7 +608,7 @@ model and are an upper bound rather than a measurement. The joint inversion reac
 conclusion from the other direction: absolute Vp below ~4 km is unresolved, with ±10% starting
 perturbations surviving and being absorbed by the station terms.
 
-**Figure 8:** Depth uncertainty budget. Formal σz, the station-term envelope, and the
+**Figure 9:** Depth uncertainty budget. Formal σz, the station-term envelope, and the
 absolute-versus-relative depth difference, all as functions of depth, on one axis. Produced by
 `scripts/68_delay_depth_uncertainty.py` and the catalogue join of Section 12.
 
@@ -678,7 +680,7 @@ detection.
 No magnitudes were computed, so no magnitude of completeness can be quoted: `[value: compute from a
 magnitude stage that does not yet exist]`.
 
-**Figure 9:** Processing accounting. Sankey or waterfall diagram from associated events
+**Figure 10:** Processing accounting. Sankey or waterfall diagram from associated events
 through the airgun exclusion, the guard, the location failures and each tier cut. Produced by
 `scripts/68_catalogue_accounting.py`.
 
@@ -730,16 +732,16 @@ the austral winter and peak in late 2019 and January 2020:
 \* January and February 2019 are incomplete (deployment start and the excluded airgun window);
 February 2020 is truncated at recovery.
 
-**Figure 10:** Epicentral map of the standard and strict tiers over the 30 m bathymetry,
+**Figure 11:** Epicentral map of the standard and strict tiers over the 30 m bathymetry,
 with the 1000 m contour outlining the edifice, OBS positions, and events coloured by depth below the
 local seafloor. Produced by `scripts/33_plot_nlloc.py`.
 
-**Figure 11:** Depth distribution. Panel (a) histogram of depth below local seafloor per
+**Figure 12:** Depth distribution. Panel (a) histogram of depth below local seafloor per
 tier with the 4 km resolution limit marked; panels (b–c) two orthogonal cross-sections with the
 seafloor profile band (minimum/median/maximum across the swath) and formal σz error bars. Produced
 by `scripts/33_plot_nlloc.py` and `scripts/plot_hypodd_with_seafloor.py`.
 
-**Figure 12:** Temporal behaviour. Daily event counts for each tier, cumulative count, and
+**Figure 13:** Temporal behaviour. Daily event counts for each tier, cumulative count, and
 a depth-versus-time scatter coloured by distance from the caldera centre, with the excluded airgun
 window shaded. Produced by `scripts/33_plot_nlloc.py` and `scripts/34_animate_nlloc.py`.
 
@@ -803,14 +805,14 @@ retained — quality control removes events finishing above their local seafloor
 respectively), which are preferentially the least well recorded and shallowest edifice events — so
 their depth distributions are not like-for-like samples of the absolute one.
 
-**Figure 13:** Estimator comparison. Panel (a) relative depth against absolute depth with the 1:1
+**Figure 14:** Estimator comparison. Panel (a) relative depth against absolute depth with the 1:1
 line and the fitted regression, for both relative solutions; panel (b) median depth change by
 absolute depth bin with the station-term perturbation envelope overlaid; panel (c) map of horizontal
 displacement vectors. Produced from the catalogue join
 (`catalogs/nlloc_year_v6_standard.csv` × `catalogs/hypodd_year_v6_3d_qc.csv` and
 `catalogs/hypodd_year_v6_3d_xc_qc.csv`).
 
-**Figure 14:** Relative geometry. Map and two cross-sections of the cross-correlation-refined
+**Figure 15:** Relative geometry. Map and two cross-sections of the cross-correlation-refined
 catalogue at full resolution, coloured by time, with the seafloor profile, illustrating lineations
 and sub-cluster structure at the 0.11 km nearest-neighbour scale. Produced by
 `scripts/plot_hypodd_with_seafloor.py` and `scripts/animate_hypodd.py`.
@@ -858,7 +860,7 @@ the differential-time construction and the travel-time table were each validated
 synthetic data before the production run (Section 7), and the production configuration recovers
 input depths with a slope of +0.001.
 
-**Figure 15:** Validation. Panel (a) per-station distribution of analyst-measured S−P with
+**Figure 16:** Validation. Panel (a) per-station distribution of analyst-measured S−P with
 the station's S−P term marked; panel (b) automatic minus analyst S−P per station; panel (c) raw and
 catalogue recall per station in the trusted window. Produced by `scripts/68_manual_sp_vs_delays.py`
 and `scripts/54_manual_pick_recall.py`.
