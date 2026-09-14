@@ -98,7 +98,7 @@ def main() -> None:
         for l in Path(args.delays).read_text().split("\n"):
             f = l.split()
             if len(f) == 5 and f[0] == "LOCDELAY": dl[(f[1], f[2])] = float(f[4])
-        corr = sp.station.map(lambda st: dl.get((st, "S"), 0.0) - dl.get((st, "P"), 0.0))
+        corr = sp.station.map(lambda st: dl.get((str(st).split(".")[-1], "S"), 0.0) - dl.get((str(st).split(".")[-1], "P"), 0.0))
         sp["sp_obs"] = sp.sp_obs - corr
         print(f"  observed S-P corrected by station (S-P) delays from {args.delays}: median correction {corr.median():+.3f} s")
     sp = sp[(sp.sp_obs > 0) & (sp.sp_obs < 10)]

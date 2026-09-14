@@ -1275,3 +1275,32 @@ corrections only, hypocentres and the 1.78 start model fixed — the run whose f
 NLLoc's), then iterate NLLoc's own per-station median residuals (script 65) on the
 2,000-event sample; gates after each iteration (scripts 61/60/52); the year runs only if
 the S−P spread ratio moves toward 1.0 and pinning does not grow.
+
+### I30. v6 station-term iterations on the sample (VELEST invA start → NLLoc residual updates)
+Delays: it0 = VELEST invA P/S corrections (S−P mean +0.21 s on OBS); it1/it2 add NLLoc's own
+per-station median residuals (≥20 readings). NLLoc applies LOCDELAY as obs − delay
+(NLLocLib.c DELAY_CORR), same sign as VELEST (positive = station late).
+
+| | v5 | it0 | it1 | it2 |
+|---|---|---|---|---|
+| hyps written | 2000 | 1908 | 1891 | 1879 |
+| top-pinned | 28.5% | 24.4% | 23.0% | 23.2% |
+| near P residual, pinned set | −0.160 | −0.170 | −0.150 | −0.138 s |
+| rms p50 | 0.239 | 0.258 | 0.236 | 0.234 s |
+| P resid vs water depth slope | +0.008 | −0.092 | −0.053 | −0.035 s/km |
+| S−P spread pred / obs (obs corrected by the run's own S−P delays) | 3.51/2.80 = 1.25 | 3.14/2.58 = 1.22 | — | 3.26/2.66 = 1.23 |
+
+Depth response it2 vs v5 (1,869 common located): 0.05–1 km +0.31, 1–2 +0.38, 2–4 +0.18,
+4–6 −0.59, 6–9 −0.79, 9–15 −0.98 km; 25% of v5's pinned events un-pin. That is the
+VELEST-like compression in direction, but the S−P spread ratio does not move (1.25 → 1.23):
+the relocation re-absorbs most of each station term (residual shift per station is
+20–30% of the imposed delay), so NLLoc's own iteration converges to small S−P terms
+(median +0.08 → +0.13 s) instead of VELEST's +0.54. VELEST's gate pass came jointly with
+Vp/Vs 1.60–1.70 in the top 5 km. Two more sample runs launched: invB station terms with
+Vp/Vs 1.78, and invB terms with Vp/Vs 1.70 (VELEST's frame reproduced in NLLoc).
+Two defects found on the way: (1) 4.6% of events fail with "cannot find companion arrival"
+once LOCDELAY lines are present (single-event tests running); (2) a far land station (TOW,
+few readings) ran away to −2.06 s over the iterations → script 65 now clips |delay| ≤ 1 s
+and requires ≥ 50 readings. Script 52 gained `--delays` so the S−P gate is scored
+consistently for delay-located catalogues (first version wrongly keyed stations with the
+network prefix → +0.000 correction; fixed).
