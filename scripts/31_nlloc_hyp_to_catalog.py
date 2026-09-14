@@ -89,6 +89,73 @@ def parse_hyp(path: Path) -> dict | None:
     return rec
 
 
+def _pick_keys_from_obs_block(block: list[str]) -> set:
+    keys = set()
+    for l in block:
+        f = l.split()
+        if len(f) >= 9 and not f[0].startswith("#"):
+            keys.add((f[0], f[4], f[6], f[7], f"{float(f[8]):.2f}"))
+    return keys
+
+
+def _pick_keys_from_hyp(path: Path) -> set:
+    keys, inblock = set(), False
+    for l in path.read_text().split("\n"):
+        if l.startswith("PHASE ID"): inblock = True; continue
+        if l.startswith("END_PHASE"): break
+        if inblock:
+            f = l.split()
+            if len(f) >= 9:
+                try: keys.add((f[0], f[4], f[6], f[7], f"{float(f[8]):.2f}"))
+                except ValueError: pass
+    return keys
+
+
+def _match_hyps_to_obs(out_dir: Path, obs_root: Path, label: str) -> list:
+    """Content-based mapping hyp -> global obs_order: each hyp is matched to the obs event
+    block sharing its picks (station, phase, date, hrmn, sec). Order is preserved within a
+    shard, so a forward pointer suffices; obs blocks with no hyp (events NLLoc failed on,
+    e.g. 'cannot find companion arrival' under LOCDELAY) are skipped and REPORTED instead of
+    shifting every later event onto the wrong hyp -- which is what the positional mapping
+    did on year_v6 (50 failed events scrambled 64% of origin times by hours)."""
+    shard_dirs = sorted(d for d in out_dir.iterdir() if d.is_dir() and d.name.startswith("shard_"))
+    ordered: list = []
+    if shard_dirs:
+        n_shards = len(shard_dirs); slots = {}
+        unmatched = []
+        for s_idx, sh in enumerate(shard_dirs):
+            hyps = sorted(h for h in sh.glob("loc.20*.grid0.loc.hyp") if "last" not in h.name)
+            obs = (obs_root / f"{label}_shards" / f"shard_{s_idx:02d}.obs").read_text().split("\n")
+            blocks, cur = [], []
+            for l in obs:
+                if l.strip() == "":
+                    if cur: blocks.append(cur); cur = []
+                else: cur.append(l)
+            if cur: blocks.append(cur)
+            bkeys = [_pick_keys_from_obs_block(b) for b in blocks]
+            j = 0
+            for h in hyps:
+                hk = _pick_keys_from_hyp(h)
+                j0 = j
+                while j < len(blocks) and not (hk & bkeys[j]):
+                    j += 1
+                if j >= len(blocks):
+                    raise SystemExit(f"{h.name}: no obs block in shard {s_idx} shares its picks (searched from block {j0})")
+                for k in range(j0, j):
+                    unmatched.append((s_idx, k, sorted(bkeys[k])[0] if bkeys[k] else None))
+                slots[j * n_shards + s_idx] = h
+                j += 1
+            for k in range(j, len(blocks)):
+                unmatched.append((s_idx, k, sorted(bkeys[k])[0] if bkeys[k] else None))
+        n = max(slots) + 1
+        ordered = [slots.get(i) for i in range(n)]
+        print(f"content-based mapping: {len(slots):,} hyps matched; {len(unmatched)} obs events without a hyp"
+              + (f" (first: {unmatched[:3]})" if unmatched else ""))
+        (out_dir / "unmatched_obs_events.txt").write_text("\n".join(f"{s} {k} {key}" for s, k, key in unmatched) + "\n")
+        return ordered
+    return sorted([h for h in out_dir.glob("loc.20*.grid0.loc.hyp") if "last" not in h.name])
+
+
 def _collect_hyps_in_obs_order(out_dir: Path) -> list[Path]:
     """Return per-event .hyp files indexed by global obs_order. Index `i`
     of the returned list corresponds to obs_order == i (or None when that
@@ -119,6 +186,7 @@ def _collect_hyps_in_obs_order(out_dir: Path) -> list[Path]:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--label", default="picker_only_no_shots")
+    p.add_argument("--allow-positional", action="store_true", help="skip the positional-vs-content comparison print")
     p.add_argument("--tt-prefix", default=None,
                    help="travel-time grid prefix the run used; sets depth_datum")
     p.add_argument("--depth-datum", default=None, choices=["seafloor", "sealevel"],
@@ -133,7 +201,15 @@ def main() -> None:
         args.depth_datum = "sealevel" if args.tt_prefix >= "ORCA_v4" else "seafloor"
 
     out_dir = REPO / "nlloc" / "output" / args.label
-    ordered_hyps = _collect_hyps_in_obs_order(out_dir)
+    obs_root = REPO / "nlloc" / "obs"
+    if (obs_root / f"{args.label}_shards").exists():
+        ordered_hyps = _match_hyps_to_obs(out_dir, obs_root, args.label)
+        if not args.allow_positional:
+            pos = _collect_hyps_in_obs_order(out_dir)
+            same = sum(1 for a_, b_ in zip(pos, ordered_hyps) if a_ == b_)
+            print(f"positional vs content mapping agree on {same:,} of {len(ordered_hyps):,} slots")
+    else:
+        ordered_hyps = _collect_hyps_in_obs_order(out_dir)
     if not ordered_hyps:
         raise SystemExit(f"no .hyp files in {out_dir}")
     n_slots = len(ordered_hyps)

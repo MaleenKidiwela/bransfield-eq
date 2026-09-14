@@ -1362,3 +1362,19 @@ LOCDELAY lines, gated by diff; obs = year_v5.obs guarded with the same delays).
 (20,140 S picks dropped in 13,979 of 79,783 events, 17.5%), `year_v6.in` = v5 control +
 76 LOCDELAY lines (diff-gated), ORCA_v5 grids, Vp/Vs 1.78; then 31 → 40 → hypoDD 3D on the
 v6 standard tier → 50/55 → movies, in one chained job.
+
+### G11 / I34. MISTAKE (mine): year-v6 chain did not stop on a failed gate; positional hyp→event mapping scrambled the catalogue
+The v6 year run located 79,733 of 79,783 events (50 failed inside NLLoc despite the script-66
+guard). GATE 2 printed FAIL but my chained command only echoed it and went on: script 31's
+positional mapping (k-th hyp ↔ k-th obs event per shard) then shifted every event after
+each failure onto the wrong hyp — 64% of v6 origin times differed from v5 by hours (median
++2,271 s) while depths and rms looked normal; script 22 then dropped 89,288 picks with tt≤0
+and ph2dt kept 3,493 of 12,194 "events". Caught by comparing v5/v6 origin times before
+trusting the tiers. Actions: chain killed; `nlloc_year_v6*.csv` renamed `*_INVALID_mapping`;
+`hypodd/year_v6_3d` deleted. Fix: script 31 now maps each hyp to the obs block that shares
+its picks (station, phase, date, hrmn, sec) with a forward pointer per shard, reports the
+obs events without a hyp (`unmatched_obs_events.txt`) and keeps them out of the catalogue;
+regression on v5: 79,783/79,783 slots identical to the positional mapping. This is the same
+class of failure as the 2026-05 v2 join bug (memory: nlloc_v2_join_bug) — positional joins
+are now gone from this script. The rebuilt v6 chain gates OT(v6)−OT(v5) (median < 1 s, <1%
+beyond 5 s) before anything downstream runs.
