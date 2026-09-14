@@ -631,8 +631,8 @@ def fig5():
     fig, axes = plt.subplots(1, 2, figsize=(12.4, 5.6), sharey=True)
     out = {}
     for ax, (d, ratio, ntot, name) in zip(axes, [
-            (ref, ref_ratio, ref_n, "reference: ORCA_v5 grids, NO station terms"),
-            (fin, fin_ratio, fin_n, "final v6: ORCA_v5 grids + v6_it1B station terms")]):
+            (ref, ref_ratio, ref_n, "reference run: no station terms"),
+            (fin, fin_ratio, fin_n, "final catalogue: with station terms")]):
         lab = [f"{r.lo:g}-{r.hi:g}" for r in d.itertuples()]
         x = np.arange(len(d))
         bw = 0.38
@@ -657,8 +657,8 @@ def fig5():
                  "by depth bin (2,000-event sample, scorer Vp/Vs 1.88)", y=1.0)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
 
-    r0, s0, n0 = out["reference: ORCA_v5 grids, NO station terms"]
-    r1, s1, n1 = out["final v6: ORCA_v5 grids + v6_it1B station terms"]
+    r0, s0, n0 = out["reference run: no station terms"]
+    r1, s1, n1 = out["final catalogue: with station terms"]
     CAPTIONS["F5"] = (
         f"**F5 - the S-P depth gate.** The most nearly model-free depth observable this "
         f"array has is the S-P time at the nearest station, read straight from the picks. "
